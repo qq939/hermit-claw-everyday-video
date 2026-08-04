@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill 配置中心 — 8082</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  padding: 20px;
+}
+.container { max-width: 960px; margin: 0 auto; }
+header {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+header h1 { font-size: 24px; color: #f0f6fc; }
+header p { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 24px; border-bottom: 1px solid var(--border); }
+.tab {
+  padding: 8px 20px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 6px 6px 0 0;
+  color: var(--text-muted);
+  font-size: 14px;
+  background: transparent;
+  margin-bottom: -1px;
+}
+.tab:hover { color: var(--text); background: var(--surface); }
+.tab.active { color: var(--accent); border-color: var(--border); background: var(--surface); font-weight: 600; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card h3 { font-size: 16px; margin-bottom: 8px; }
+.card .meta { font-size: 12px; color: var(--text-muted); margin-bottom: 12px; }
+.card .desc { font-size: 14px; color: var(--text); margin-bottom: 12px; }
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.badge.installed { background: #1a3a2a; color: var(--green); }
+.badge.missing { background: #3d1a1a; color: var(--red); }
+.badge.enabled { background: #1a3a2a; color: var(--green); }
+.badge.disabled { background: #3d2a1a; color: var(--yellow); }
+
+/* Forms */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.form-group .hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+input, textarea, select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+input[type="password"] { font-family: monospace; letter-spacing: 2px; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: all 0.15s;
+}
+.btn:hover { background: #1f2836; }
+.btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn.primary:hover { background: #2ea043; }
+.btn.danger { color: var(--red); }
+.btn.danger:hover { background: #3d1a1a; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Log output */
+.log-box {
+  background: #000;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: 'SF Mono', Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  color: #7ee787;
+  margin-top: 12px;
+  display: none;
+}
+.log-box.visible { display: block; }
+
+/* Grid */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--text-muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+
+/* Toast */
+.toast {
+  position: fixed; top: 20px; right: 20px;
+  padding: 12px 20px;
+  border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 14px;
+  z-index: 1000;
+  opacity: 0;
+  transition: opacity 0.3s;
+  max-width: 400px;
+}
+.toast.show { opacity: 1; }
+.toast.error { border-color: var(--red); }
+.toast.success { border-color: var(--green); }
+
+@media (max-width: 640px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>⚙ Skill 配置中心</h1>
+  <p>交互式技能管理 — 安装 · 配置 · 注入身份 · 测试</p>
+</header>
+
+<div class="tabs">
+  <div class="tab active" data-tab="skills">📦 技能列表</div>
+  <div class="tab" data-tab="clawra">🤳 Clawra Selfie</div>
+  <div class="tab" data-tab="install">➕ 安装新技能</div>
+  <div class="tab" data-tab="about">📖 关于</div>
+</div>
+
+<!-- Tab: Skills List -->
+<div class="tab-content active" id="tab-skills">
+  <div class="card">
+    <h3>已检测的技能</h3>
+    <p class="meta">本地 skills/ 目录 + Claude 原生技能</p>
+    <div id="skills-list"><p style="color:var(--text-muted)">加载中...</p></div>
+  </div>
+</div>
+
+<!-- Tab: Clawra -->
+<div class="tab-content" id="tab-clawra">
+  <div class="card">
+    <h3>Clawra Selfie — AI 自拍技能</h3>
+    <p class="desc">
+      基于 <a href="https://github.com/SumeLabs/clawra" target="_blank" style="color:var(--accent)">github.com/SumeLabs/clawra</a>
+      的开源自拍功能。需要 fal.ai API Key。
+    </p>
+    <div id="clawra-status"></div>
+  </div>
+
+  <div class="card">
+    <h3>配置</h3>
+    <div id="clawra-form"></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn primary" onclick="configureClawra()">💾 保存配置</button>
+      <button class="btn" onclick="injectClawraIdentity()">📄 注入身份文件</button>
+      <button class="btn danger" onclick="removeClawra()">🗑 移除技能</button>
+      <button class="btn" onclick="testClawra()">🧪 测试连接</button>
+    </div>
+    <div class="log-box" id="clawra-log"></div>
+  </div>
+</div>
+
+<!-- Tab: Install New Skill -->
+<div class="tab-content" id="tab-install">
+  <div class="card">
+    <h3>从 Git 安装</h3>
+    <p class="meta">克隆 GitHub 仓库到本地 skills/ 目录</p>
+    <div class="form-group">
+      <label for="git-url">仓库地址</label>
+      <input type="text" id="git-url" placeholder="https://github.com/SumeLabs/clawra" value="https://github.com/SumeLabs/clawra">
+    </div>
+    <div class="form-group">
+      <label for="git-name">别名（可选）</label>
+      <input type="text" id="git-name" placeholder="留空自动从仓库名推断">
+    </div>
+    <button class="btn primary" onclick="installFromGit()">📥 从 Git 安装</button>
+    <div class="log-box" id="install-log"></div>
+  </div>
+
+  <div class="card">
+    <h3>从 npm 安装</h3>
+    <p class="meta">通过 npx 安装全局 CLI 技能包</p>
+    <div class="form-group">
+      <label for="npm-pkg">npm 包名</label>
+      <input type="text" id="npm-pkg" placeholder="e.g. clawra">
+    </div>
+    <button class="btn primary" onclick="installFromNpm()">📥 从 npm 安装</button>
+  </div>
+</div>
+
+<!-- Tab: About -->
+<div class="tab-content" id="tab-about">
+  <div class="card">
+    <h3>关于 Skill 配置模块</h3>
+    <p class="desc">
+      本模块提供交互式技能管理功能，从 Clawra 项目汲取灵感，适配到 Hermit-Claw / Claude Code 环境。
+    </p>
+    <table>
+      <tr><th>功能</th><th>说明</th></tr>
+      <tr><td>技能检测</td><td>扫描本地 skills/ 和 ~/.claude/skills/ 目录</td></tr>
+      <tr><td>配置管理</td><td>保存 API Key、环境变量到 config/skills.json</td></tr>
+      <tr><td>身份注入</td><td>将技能描述写入 IDENTITY.md / SOUL.md</td></tr>
+      <tr><td>Git 安装</td><td>git clone --depth 1 安装技能仓库</td></tr>
+      <tr><td>Clawra 适配</td><td>专为 clawra-selfie 提供的一键配置</td></tr>
+    </table>
+  </div>
+  <div class="card">
+    <h3>配置文件位置</h3>
+    <table>
+      <tr><th>文件</th><th>用途</th></tr>
+      <tr><td><code>config/skills.json</code></td><td>所有技能的配置存储</td></tr>
+      <tr><td><code>skills/&lt;name&gt;/</code></td><td>技能代码目录</td></tr>
+      <tr><td><code>skills/&lt;name&gt;/.env</code></td><td>技能环境变量</td></tr>
+      <tr><td><code>IDENTITY.md</code></td><td>身份文件（注入技能描述）</td></tr>
+      <tr><td><code>SOUL.md</code></td><td>灵魂文件（注入技能描述）</td></tr>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ---------- tab switching ----------
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'skills') refreshSkills();
+    if (tab.dataset.tab === 'clawra') refreshClawra();
+  });
+});
+
+// ---------- toast ----------
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+
+// ---------- utils ----------
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  try { return { ok: res.ok, status: res.status, data: JSON.parse(text) }; }
+  catch { return { ok: res.ok, status: res.status, data: text }; }
+}
+
+function showLog(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+// ---------- Skills List ----------
+async function refreshSkills() {
+  const el = document.getElementById('skills-list');
+  const r = await api('GET', '/skill/api/status');
+  if (!r.ok) { el.innerHTML = `<p style="color:var(--red)">Failed to load: ${r.status}</p>`; return; }
+  const skills = r.data.skills || [];
+  if (skills.length === 0) {
+    el.innerHTML = `<p style="color:var(--text-muted)">(暂无已安装的技能。切换到"安装"标签页安装 Clawra 或其他技能。)</p>`;
+    return;
+  }
+  let html = '<table><tr><th>名称</th><th>状态</th><th>类型</th><th>配置项</th><th>操作</th></tr>';
+  for (const s of skills) {
+    const status = s.installed
+      ? `<span class="badge installed">已安装</span>`
+      : `<span class="badge missing">未安装</span>`;
+    const enabled = s.enabled
+      ? `<span class="badge enabled">启用</span>`
+      : `<span class="badge disabled">禁用</span>`;
+    const configCount = s.configKeys ? s.configKeys.length : 0;
+    html += `<tr>
+      <td><strong>${s.name}</strong></td>
+      <td>${status} ${enabled}</td>
+      <td>${s.detail ? s.detail.type : '—'}</td>
+      <td>${configCount} 项</td>
+      <td>
+        <button class="btn" style="padding:4px 10px;font-size:12px" onclick="toggleSkill('${s.name}', ${!s.enabled})">
+          ${s.enabled ? '禁用' : '启用'}
+        </button>
+        <button class="btn danger" style="padding:4px 10px;font-size:12px" onclick="removeSkillConfirm('${s.name}')">删除</button>
+      </td>
+    </tr>`;
+  }
+  html += '</table>';
+  el.innerHTML = html;
+}
+
+async function toggleSkill(name, enabled) {
+  const r = await api('POST', '/skill/api/configure', { name, enabled });
+  if (r.ok) { toast(`技能 ${name} ${enabled ? '已启用' : '已禁用'}`); refreshSkills(); }
+  else toast(r.data?.error || '操作失败', 'error');
+}
+
+async function removeSkillConfirm(name) {
+  if (!confirm(`确定要移除技能 "${name}" 吗？这也会从身份文件中移除。`)) return;
+  const r = await api('POST', '/skill/api/remove', { name });
+  if (r.ok) { toast(`已移除 ${name}`); refreshSkills(); }
+  else toast(r.data?.error || '移除失败', 'error');
+}
+
+// ---------- Clawra ----------
+async function refreshClawra() {
+  const r = await api('GET', '/skill/api/clawra');
+  if (!r.ok) { document.getElementById('clawra-status').innerHTML = `<p style="color:var(--red)">加载失败</p>`; return; }
+  const d = r.data;
+  const statusEl = document.getElementById('clawra-status');
+  statusEl.innerHTML = `
+    <p>状态：${d.installed ? '<span class="badge installed">已安装</span>' : '<span class="badge missing">未安装</span>'}
+       ${d.enabled ? '<span class="badge enabled">已启用</span>' : '<span class="badge disabled">已禁用</span>'}</p>
+    <p style="font-size:13px;color:var(--text-muted);margin-top:8px">
+      ${d.installGuide ? d.installGuide.join('<br>') : ''}
+    </p>
+  `;
+
+  // Build form from schema
+  const schema = d.configSchema || d.defaultSchema || {};
+  const currentConfig = d.config || {};
+  let formHtml = '';
+  for (const [key, field] of Object.entries(schema)) {
+    const val = currentConfig[key] || '';
+    const inputType = field.type === 'password' ? 'password' : 'text';
+    formHtml += `<div class="form-group">
+      <label for="clawra-${key}">${field.label || key}</label>
+      <input type="${inputType}" id="clawra-${key}" value="${val}" placeholder="${field.placeholder || ''}">
+      ${field.required ? '<span class="hint">必填</span>' : ''}
+    </div>`;
+  }
+  document.getElementById('clawra-form').innerHTML = formHtml;
+}
+
+async function configureClawra() {
+  const schema = (await api('GET', '/skill/api/clawra')).data?.configSchema || {};
+  const config = {};
+  for (const key of Object.keys(schema)) {
+    const val = document.getElementById(`clawra-${key}`)?.value || '';
+    if (val) config[key] = val;
+  }
+  const r = await api('POST', '/skill/api/configure', { name: 'clawra-selfie', config, configSchema: schema });
+  if (r.ok) {
+    toast('Clawra 配置已保存');
+    showLog('clawra-log', `✅ 配置保存成功\n${JSON.stringify(r.data, null, 2)}`);
+    refreshClawra();
+  } else {
+    toast(r.data?.error || '保存失败', 'error');
+    showLog('clawra-log', `❌ 保存失败: ${r.data?.error || r.status}`);
+  }
+}
+
+async function injectClawraIdentity() {
+  const desc = `I have selfie-generation capabilities powered by Clawra (fal.ai).
+I can generate selfies when asked: "send a pic", "what are you doing?", "take a selfie".
+Modes: Mirror mode (full-body, outfits) and Direct mode (close-ups, locations).
+This requires FAL_KEY to be configured.`;
+  const r = await api('POST', '/skill/api/inject', { name: 'clawra-selfie', description: desc });
+  if (r.ok) { toast('已注入身份文件'); showLog('clawra-log', `✅ 身份注入成功`); }
+  else toast(r.data?.error || '注入失败', 'error');
+}
+
+async function removeClawra() {
+  if (!confirm('确定移除 Clawra 技能配置吗？')) return;
+  const r = await api('POST', '/skill/api/remove', { name: 'clawra-selfie' });
+  if (r.ok) { toast('已移除'); refreshClawra(); showLog('clawra-log', '✅ 已移除 Clawra'); }
+  else toast(r.data?.error || '移除失败', 'error');
+}
+
+async function testClawra() {
+  showLog('clawra-log', '🧪 测试连接...');
+  const r = await api('GET', '/skill/api/clawra');
+  if (r.ok) {
+    const d = r.data;
+    const hasKey = d.config && d.config.FAL_KEY;
+    showLog('clawra-log', `📋 Clawra 状态报告:
+  ─────────────────────────────
+  安装状态: ${d.installed ? '✅ 已安装' : '❌ 未安装'}
+  启用状态: ${d.enabled ? '✅ 已启用' : '⛔ 已禁用'}
+  FAL_KEY:  ${hasKey ? '✅ 已配置' : '❌ 未配置'}
+  ─────────────────────────────
+  建议: ${!d.installed ? '先点击"从 Git 安装"安装 Clawra' : !hasKey ? '填入 FAL_KEY 并保存' : '配置完成，可以使用!'}
+`);
+  } else {
+    showLog('clawra-log', '❌ 连接失败');
+  }
+}
+
+// ---------- Install ----------
+async function installFromGit() {
+  const url = document.getElementById('git-url').value.trim();
+  const as = document.getElementById('git-name').value.trim();
+  if (!url) { toast('请输入仓库地址', 'error'); return; }
+  showLog('install-log', `📥 正在从 ${url} 安装...\n`);
+  const r = await api('POST', '/skill/api/install', { source: 'git', url, as: as || undefined });
+  if (r.ok) {
+    showLog('install-log', `✅ 安装成功!\n技能名称: ${r.data.name}\n路径: ${r.data.path}\n元数据: ${JSON.stringify(r.data.meta || {}, null, 2)}`);
+    toast(`已安装 ${r.data.name}`);
+    refreshSkills();
+  } else {
+    showLog('install-log', `❌ 安装失败: ${r.data?.error || r.status}`);
+    toast('安装失败', 'error');
+  }
+}
+
+async function installFromNpm() {
+  const pkg = document.getElementById('npm-pkg').value.trim();
+  if (!pkg) { toast('请输入包名', 'error'); return; }
+  toast('npm 安装功能需要具体包支持，推荐使用 Git 安装方式', 'error');
+}
+
+// ---------- init ----------
+refreshSkills();
+</script>
+</body>
+</html>

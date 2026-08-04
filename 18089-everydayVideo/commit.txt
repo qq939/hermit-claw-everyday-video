@@ -1,0 +1,7 @@
+7262e10 init: claude ask server with /ask/claude and /health
+7262e10 harden server.js: read response from agent_tui.log new portion, dual timeouts, run.log only
+8678d95 server: read claude reply from agent_tui.log; preserve platform spec
+58d661f session: append commit log entry for hardening
+
+833657b session: poll agent_tui.log for fast response, robust port-8082 restart
+039e60c smoke: add acceptance harness for /ask/claude + /health + injection

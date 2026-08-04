@@ -1,0 +1,29 @@
+# Logs & runtime
+logs/
+*.log
+*.pid
+!logs/commit.txt
+
+# OS junk
+.DS_Store
+Thumbs.db
+__MACOSX/
+desktop.ini
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local-only state
+.env
+.env.local
+config/*.json
+!config/.gitkeep
+sessions/

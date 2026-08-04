@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent 控制台 — 8082</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2129;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --text-bright: #f0f6fc;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --purple: #bc8cff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 14px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Layout */
+.app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 220px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  position: sticky; top: 0; height: 100vh;
+  display: flex; flex-direction: column;
+}
+.sidebar .logo { padding: 0 20px 16px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+.sidebar .logo h1 { font-size: 18px; color: var(--text-bright); }
+.sidebar .logo p { font-size: 11px; color: var(--text-muted); }
+.nav { flex: 1; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 20px;
+  cursor: pointer;
+  color: var(--text-muted);
+  border-left: 3px solid transparent;
+  transition: all 0.15s;
+}
+.nav-item:hover { background: var(--surface-2); color: var(--text); }
+.nav-item.active { background: var(--surface-2); color: var(--text-bright); border-left-color: var(--accent); font-weight: 600; }
+.nav-item .icon { width: 20px; text-align: center; }
+.sidebar .footer { padding: 12px 20px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-muted); }
+
+.main { flex: 1; padding: 24px 32px; max-width: 1200px; }
+.page { display: none; }
+.page.active { display: block; }
+.page-title { font-size: 22px; color: var(--text-bright); margin-bottom: 4px; }
+.page-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
+
+/* Cards */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card h3 { font-size: 15px; margin-bottom: 12px; color: var(--text-bright); }
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; } .grid-2 { grid-template-columns: 1fr; } }
+@media (max-width: 600px) { .grid-3, .grid-4 { grid-template-columns: 1fr; } .sidebar { width: 64px; } .sidebar .logo p, .nav-item span.txt { display: none; } }
+
+/* Stat cards */
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+.stat-card .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
+.stat-card .stat-value { font-size: 24px; font-weight: 700; color: var(--text-bright); margin: 4px 0; }
+.stat-card .stat-hint { font-size: 11px; color: var(--text-muted); }
+
+/* Badges */
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge.green { background: #1a3a2a; color: var(--green); }
+.badge.red { background: #3d1a1a; color: var(--red); }
+.badge.yellow { background: #3d2a1a; color: var(--yellow); }
+.badge.gray { background: #2d333b; color: var(--text-muted); }
+.badge.blue { background: #1a2a3a; color: var(--accent); }
+.badge.purple { background: #2a1a3a; color: var(--purple); }
+
+/* Forms */
+.form-group { margin-bottom: 16px; }
+.form-group label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; color: var(--text); }
+.form-group .hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+input, textarea, select {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+}
+input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+textarea { min-height: 80px; resize: vertical; font-family: 'SF Mono', Monaco, monospace; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  transition: all 0.15s;
+}
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn.primary:hover { background: #2ea043; }
+.btn.accent { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.btn.accent:hover { background: #388bfd; }
+.btn.danger { color: var(--red); }
+.btn.danger:hover { background: #3d1a1a; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Message board */
+.msg-list { max-height: 420px; overflow-y: auto; }
+.msg { display: flex; gap: 12px; padding: 12px; border-radius: 8px; margin-bottom: 8px; background: var(--surface-2); border: 1px solid var(--border); }
+.msg.agent { border-left: 3px solid var(--accent); }
+.msg.user { border-left: 3px solid var(--green); }
+.msg.system { border-left: 3px solid var(--purple); }
+.msg .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.msg.agent .avatar { background: #1a2a3a; }
+.msg.user .avatar { background: #1a3a2a; }
+.msg.system .avatar { background: #2a1a3a; }
+.msg .msg-body { flex: 1; min-width: 0; }
+.msg .msg-meta { display: flex; gap: 8px; align-items: center; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+.msg .msg-content { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+.msg .msg-thread { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: #2d333b; }
+
+/* Report */
+.report-item { border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 8px; background: var(--surface-2); cursor: pointer; transition: all 0.15s; }
+.report-item:hover { border-color: var(--accent); }
+.report-item .report-title { font-weight: 600; color: var(--text-bright); }
+.report-item .report-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.report-content { background: #000; border: 1px solid var(--border); border-radius: 6px; padding: 16px; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; white-space: pre-wrap; color: #7ee787; max-height: 500px; overflow-y: auto; }
+
+/* Log box */
+.log-box { background: #000; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; max-height: 250px; overflow-y: auto; white-space: pre-wrap; color: #7ee787; }
+
+/* Toast */
+.toast {
+  position: fixed; top: 20px; right: 20px; z-index: 1000;
+  padding: 12px 20px; border-radius: 6px; background: var(--surface);
+  border: 1px solid var(--border); color: var(--text); font-size: 14px;
+  opacity: 0; transition: opacity 0.3s; max-width: 400px;
+}
+.toast.show { opacity: 1; }
+.toast.error { border-color: var(--red); }
+.toast.success { border-color: var(--green); }
+
+.empty { color: var(--text-muted); padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="logo">
+      <h1>🤖 Agent 控制台</h1>
+      <p>Hermit-Claw · :8082</p>
+    </div>
+    <nav class="nav">
+      <div class="nav-item active" data-page="dashboard"><span class="icon">📋</span><span class="txt">总览</span></div>
+      <div class="nav-item" data-page="messages"><span class="icon">💬</span><span class="txt">消息交流</span></div>
+      <div class="nav-item" data-page="email"><span class="icon">📧</span><span class="txt">邮件配置</span></div>
+      <div class="nav-item" data-page="reports"><span class="icon">📊</span><span class="txt">工作报告</span></div>
+      <div class="nav-item" data-page="settings"><span class="icon">⚙️</span><span class="txt">工作设置</span></div>
+      <div class="nav-item" data-page="skills"><span class="icon">🎯</span><span class="txt">技能配置</span></div>
+    </nav>
+    <div class="footer">
+      <div id="clock">--:--:--</div>
+      <div style="margin-top:4px" id="health-dot">● 未知</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- ===== Dashboard ===== -->
+    <div class="page active" id="page-dashboard">
+      <h2 class="page-title">📋 总览</h2>
+      <p class="page-sub">系统状态 · 每日工作流 · 最近动态</p>
+
+      <div class="grid grid-4" style="margin-bottom:16px">
+        <div class="stat-card"><div class="stat-label">服务状态</div><div class="stat-value" id="stat-health">—</div><div class="stat-hint">:8082</div></div>
+        <div class="stat-card"><div class="stat-label">消息数</div><div class="stat-value" id="stat-msgs">—</div><div class="stat-hint">含待处理</div></div>
+        <div class="stat-card"><div class="stat-label">工作报告</div><div class="stat-value" id="stat-reports">—</div><div class="stat-hint">累计生成</div></div>
+        <div class="stat-card"><div class="stat-label">下次运行</div><div class="stat-value" id="stat-next" style="font-size:14px">—</div><div class="stat-hint">每日工作流</div></div>
+      </div>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>📧 邮件配置状态</h3>
+          <div id="email-status-card"><p class="empty">加载中...</p></div>
+        </div>
+        <div class="card">
+          <h3>💬 最近消息</h3>
+          <div id="recent-msgs" class="msg-list"><p class="empty">加载中...</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>🕘 工作流时间线</h3>
+        <div id="timeline"><p class="empty">加载中...</p></div>
+        <div style="margin-top:12px; display:flex; gap:8px">
+          <button class="btn accent" onclick="runNow()">▶ 立即运行一次</button>
+        </div>
+        <div class="log-box" id="run-log" style="margin-top:12px; display:none"></div>
+      </div>
+    </div>
+
+    <!-- ===== Messages ===== -->
+    <div class="page" id="page-messages">
+      <h2 class="page-title">💬 消息交流</h2>
+      <p class="page-sub">你和 Agent 的留言板。写新消息给 Agent，Agent 会在此回复。</p>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>线程</h3>
+          <div id="thread-list"><p class="empty">加载中...</p></div>
+        </div>
+        <div class="card">
+          <h3>消息</h3>
+          <div id="msg-list" class="msg-list"><p class="empty">选择线程查看消息</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>发送新消息</h3>
+        <div class="form-group">
+          <label for="msg-thread">线程</label>
+          <input type="text" id="msg-thread" placeholder="general" value="general">
+        </div>
+        <div class="form-group">
+          <label for="msg-content">内容</label>
+          <textarea id="msg-content" placeholder="给 Agent 留言..."></textarea>
+        </div>
+        <button class="btn primary" onclick="sendMessage()">📨 发送</button>
+      </div>
+    </div>
+
+    <!-- ===== Email ===== -->
+    <div class="page" id="page-email">
+      <h2 class="page-title">📧 邮件收发</h2>
+      <p class="page-sub">邮件收发由 <code>email-sender</code> skill 提供（首选 <code>http://dimond.top:5030</code>，本地 <code>http://localhost:5030</code> 兜底）。你只需要填一个收件邮箱。</p>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>📮 收件人</h3>
+          <div class="form-group">
+            <label>主人邮箱（Agent 发邮件到这里）</label>
+            <input type="email" id="mail-target" placeholder="master@example.com">
+            <span class="hint">报告 & 主动联系都发到这里。</span>
+          </div>
+          <div class="form-group">
+            <label>邮件 skill 接入点</label>
+            <select id="mail-endpoint">
+              <option value="auto">auto — 探测远程，失败回退本地</option>
+              <option value="remote">remote — 仅用 http://dimond.top:5030</option>
+              <option value="local">local — 仅用 http://localhost:5030</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="form-group">
+              <label>每次取最新</label>
+              <input type="number" id="fetch-limit" min="1" max="100" value="10">
+            </div>
+            <div class="form-group">
+              <label>回看天数</label>
+              <input type="number" id="fetch-days" min="1" max="60" value="7">
+            </div>
+          </div>
+          <div class="form-group">
+            <label><input type="checkbox" id="auto-reply" style="width:auto"> 自动回复（收件后由 Agent 处理）</label>
+          </div>
+          <button class="btn primary" onclick="saveMailConfig()">💾 保存邮件配置</button>
+          <button class="btn accent" style="margin-left:8px" onclick="probeMail()">🔌 探测 skill</button>
+          <button class="btn" style="margin-left:8px" onclick="sendTestMail()">✉️ 发测试邮件</button>
+          <div class="log-box" id="email-log" style="margin-top:12px; display:none"></div>
+        </div>
+
+        <div class="card">
+          <h3>📨 Mail Skill 状态</h3>
+          <div id="mail-skill-status"><p class="empty">加载中...</p></div>
+          <div style="margin-top:12px">
+            <button class="btn accent" onclick="fetchInbox()">📥 拉取最新收件</button>
+          </div>
+          <div id="mail-inbox" class="msg-list" style="margin-top:12px; max-height:300px"><p class="empty">点击「拉取」获取邮件</p></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h3>ℹ️ 说明</h3>
+        <p style="font-size:13px; color:var(--text-muted); line-height:1.7">
+          旧的 SMTP/IMAP 表单已移除。邮件的实际发送与接收均由 <code>email-sender</code> skill 承担，Agent 只负责：
+        </p>
+        <ul style="font-size:13px; color:var(--text-muted); margin-top:8px; padding-left:24px; line-height:1.8">
+          <li>告诉你 <code>主人邮箱</code>（报告发给谁）</li>
+          <li>告诉你偏好哪个接入点（auto/remote/local）</li>
+          <li>在你点击「拉取」或工作流触发时，把邮件抓成消息板条目</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- ===== Reports ===== -->
+    <div class="page" id="page-reports">
+      <h2 class="page-title">📊 工作报告</h2>
+      <p class="page-sub">Agent 每次工作循环生成的报告。</p>
+
+      <div class="grid grid-2">
+        <div class="card">
+          <h3>报告列表</h3>
+          <div id="report-list"><p class="empty">加载中...</p></div>
+        </div>
+        <div class="card">
+          <h3>报告内容</h3>
+          <div id="report-detail"><p class="empty">选择左侧报告查看</p></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Settings ===== -->
+    <div class="page" id="page-settings">
+      <h2 class="page-title">⚙️ 工作设置</h2>
+      <p class="page-sub">每日工作流的调度与指令。</p>
+
+      <div class="card">
+        <h3>调度设置</h3>
+        <div class="row">
+          <div class="form-group"><label>每隔（小时）</label><input type="number" id="interval-hours" value="24" min="1"></div>
+          <div class="form-group"><label>首次运行时间</label><input type="time" id="time-of-day" value="09:00"></div>
+        </div>
+        <div class="form-group"><label><input type="checkbox" id="schedule-enabled" style="width:auto"> 启用定时任务</label></div>
+        <button class="btn primary" onclick="saveSettings()">💾 保存设置</button>
+      </div>
+
+      <div class="card">
+        <h3>工作指令</h3>
+        <p class="page-sub" style="margin-bottom:8px">告诉 Agent 每天要做什么。留空则 Agent 只汇报状态。</p>
+        <div class="form-group">
+          <textarea id="work-instructions" rows="8" placeholder="例如：每天检查项目运行状态，更新日志，修复发现的问题..."></textarea>
+        </div>
+        <button class="btn primary" onclick="saveInstructions()">💾 保存工作指令</button>
+      </div>
+    </div>
+
+    <!-- ===== Skills ===== -->
+    <div class="page" id="page-skills">
+      <h2 class="page-title">🎯 技能配置</h2>
+      <p class="page-sub">技能管理已移至独立页面。</p>
+      <div class="card" style="text-align:center; padding:40px">
+        <p style="font-size:18px; margin-bottom:12px">技能配置中心</p>
+        <p style="color:var(--text-muted); margin-bottom:20px">跳转到独立的 Skill 配置页面，管理 Clawra 等技能。</p>
+        <a class="btn accent" href="/skill/config">打开 Skill 配置 →</a>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===== state =====
+let currentThread = 'general';
+let reportsCache = [];
+
+// ===== helpers =====
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  try { return { ok: res.ok, status: res.status, data: JSON.parse(text) }; }
+  catch { return { ok: res.ok, status: res.status, data: text }; }
+}
+function toast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast ' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+function showLog(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+function escapeHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ===== nav =====
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById('page-' + item.dataset.page).classList.add('active');
+    refreshPage(item.dataset.page);
+  });
+});
+
+function refreshPage(page) {
+  if (page === 'dashboard') refreshDashboard();
+  if (page === 'messages') refreshMessages();
+  if (page === 'email') refreshEmail();
+  if (page === 'reports') refreshReports();
+  if (page === 'settings') refreshSettings();
+  if (page === 'skills') refreshSkills();
+}
+
+// ===== clock =====
+setInterval(() => {
+  const d = new Date();
+  document.getElementById('clock').textContent = d.toLocaleString('zh-CN', { hour12: false });
+}, 1000);
+
+// ===== Dashboard =====
+async function refreshDashboard() {
+  const r = await api('GET', '/api/comm/status');
+  if (!r.ok) return;
+  const s = r.data;
+  document.getElementById('stat-health').textContent = '运行中';
+  document.getElementById('stat-health').style.color = 'var(--green)';
+  document.getElementById('health-dot').textContent = '● :8082 运行中';
+  document.getElementById('health-dot').style.color = 'var(--green)';
+  document.getElementById('stat-msgs').textContent = s.messages.total;
+  document.getElementById('stat-reports').textContent = s.reports.total;
+  document.getElementById('stat-next').textContent = s.nextRun ? new Date(s.nextRun).toLocaleString('zh-CN', { hour12: false }) : '—';
+
+  // Email status card (mail-via-skill)
+  const mail = s.mail || {};
+  const endpoint = s.mailEndpointResolved || null;
+  document.getElementById('email-status-card').innerHTML = `
+    <table style="width:100%; font-size:13px">
+      <tr><td>主人邮箱</td><td>${mail.target ? '<span class="badge green">' + escapeHtml(mail.target) + '</span>' : '<span class="badge red">未设置</span>'}</td></tr>
+      <tr><td>Mail skill</td><td>${endpoint ? '<span class="badge green">' + escapeHtml(endpoint) + '</span>' : '<span class="badge yellow">未连通</span>'}</td></tr>
+      <tr><td>接入点策略</td><td><span class="badge blue">${escapeHtml(s.mailEndpoint || 'auto')}</span></td></tr>
+      <tr><td>远程兜底</td><td style="color:var(--text-muted)">${(s.mailSkill && s.mailSkill.preferred) || '—'}</td></tr>
+      <tr><td>本地兜底</td><td style="color:var(--text-muted)">${(s.mailSkill && s.mailSkill.local) || '—'}</td></tr>
+      <tr><td>自动回复</td><td>${mail.autoReply ? '<span class="badge green">开</span>' : '<span class="badge gray">关</span>'}</td></tr>
+      <tr><td>抓取参数</td><td style="color:var(--text-muted)">limit=${mail.fetchLimit || 10}, days=${mail.fetchDays || 7}</td></tr>
+    </table>
+  `;
+
+  // Recent messages
+  const msgs = s.messages.threads || [];
+  const recentEl = document.getElementById('recent-msgs');
+  if (s.messages.total === 0) { recentEl.innerHTML = '<p class="empty">暂无消息，去"消息交流"给 Agent 留言</p>'; }
+  else {
+    recentEl.innerHTML = msgs.map(t => `
+      <div class="msg" style="cursor:pointer" onclick="openThread('${t.thread}')">
+        <div class="avatar">💬</div>
+        <div class="msg-body">
+          <div class="msg-meta"><span>${escapeHtml(t.thread)}</span><span>${t.count} 条</span></div>
+          <div style="font-size:12px;color:var(--text-muted)">最后：${new Date(t.lastAt).toLocaleString('zh-CN', { hour12: false })}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  // Timeline
+  const tl = document.getElementById('timeline');
+  tl.innerHTML = `
+    <table style="width:100%; font-size:13px">
+      <tr><td style="width:120px; color:var(--text-muted)">上次运行</td><td>${s.lastRun ? new Date(s.lastRun).toLocaleString('zh-CN', { hour12: false }) : '<span class="badge yellow">从未运行</span>'}</td></tr>
+      <tr><td style="color:var(--text-muted)">下次运行</td><td>${s.nextRun ? new Date(s.nextRun).toLocaleString('zh-CN', { hour12: false }) : '—'}</td></tr>
+      <tr><td style="color:var(--text-muted)">间隔</td><td>${s.schedule.intervalHours} 小时</td></tr>
+      <tr><td style="color:var(--text-muted)">定时启用</td><td>${s.schedule.enabled ? '<span class="badge green">是</span>' : '<span class="badge red">否</span>'}</td></tr>
+      <tr><td style="color:var(--text-muted)">待处理消息</td><td>${s.messages.unprocessed} 条</td></tr>
+    </table>
+  `;
+}
+
+async function runNow() {
+  showLog('run-log', '🔄 正在运行工作流...\n');
+  const r = await api('POST', '/api/comm/run-now');
+  if (r.ok) {
+    showLog('run-log', r.data.log ? r.data.log.join('\n') : '✅ 完成');
+    toast('工作流运行完成');
+    refreshDashboard(); refreshReports();
+  } else {
+    showLog('run-log', '❌ 运行失败: ' + (r.data?.error || r.status));
+    toast('运行失败', 'error');
+  }
+}
+
+// ===== Messages =====
+async function refreshMessages() {
+  const r = await api('GET', '/api/comm/status');
+  if (!r.ok) return;
+  const threads = r.data.messages.threads || [];
+  const tl = document.getElementById('thread-list');
+  if (threads.length === 0) tl.innerHTML = '<p class="empty">暂无线程</p>';
+  else {
+    tl.innerHTML = threads.map(t => `
+      <div class="msg ${currentThread === t.thread ? '' : ''}" style="cursor:pointer; ${currentThread === t.thread ? 'border-color:var(--accent)' : ''}" onclick="openThread('${t.thread}')">
+        <div class="avatar">💬</div>
+        <div class="msg-body">
+          <div class="msg-meta"><span>${escapeHtml(t.thread)}</span><span class="badge gray">${t.count} 条</span></div>
+          <div style="font-size:12px;color:var(--text-muted)">${new Date(t.lastAt).toLocaleString('zh-CN', { hour12: false })}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+  loadThread(currentThread);
+}
+
+function openThread(thread) {
+  currentThread = thread;
+  document.getElementById('msg-thread').value = thread;
+  loadThread(thread);
+  refreshMessages();
+}
+
+async function loadThread(thread) {
+  const r = await api('GET', `/api/comm/thread?name=${encodeURIComponent(thread)}`);
+  if (!r.ok) return;
+  const msgs = r.data.messages || [];
+  const el = document.getElementById('msg-list');
+  if (msgs.length === 0) { el.innerHTML = '<p class="empty">该线程暂无消息</p>'; return; }
+  el.innerHTML = msgs.map(m => `
+    <div class="msg ${m.role}">
+      <div class="avatar">${m.role === 'user' ? '🧑' : m.role === 'agent' ? '🤖' : '⚙️'}</div>
+      <div class="msg-body">
+        <div class="msg-meta">
+          <span>${m.role}</span>
+          <span class="msg-thread">${escapeHtml(m.thread)}</span>
+          <span>${new Date(m.timestamp).toLocaleString('zh-CN', { hour12: false })}</span>
+        </div>
+        <div class="msg-content">${escapeHtml(m.content)}</div>
+      </div>
+    </div>
+  `).join('');
+  el.scrollTop = el.scrollHeight;
+}
+
+async function sendMessage() {
+  const thread = document.getElementById('msg-thread').value.trim() || 'general';
+  const content = document.getElementById('msg-content').value.trim();
+  if (!content) { toast('消息内容不能为空', 'error'); return; }
+  const r = await api('POST', '/api/comm/messages', { role: 'user', content, thread });
+  if (r.ok) {
+    toast('消息已发送');
+    document.getElementById('msg-content').value = '';
+    currentThread = thread;
+    refreshMessages(); refreshDashboard();
+  } else {
+    toast(r.data?.error || '发送失败', 'error');
+  }
+}
+
+// ===== Email (mail-via-skill) =====
+async function refreshEmail() {
+  const r = await api('GET', '/api/comm/status');
+  if (!r.ok) return;
+  const s = r.data;
+  const m = s.mail || {};
+  document.getElementById('mail-target').value = m.target || '';
+  document.getElementById('mail-endpoint').value = s.mailEndpoint || 'auto';
+  document.getElementById('fetch-limit').value = m.fetchLimit || 10;
+  document.getElementById('fetch-days').value = m.fetchDays || 7;
+  document.getElementById('auto-reply').checked = m.autoReply !== false;
+
+  // skill status panel
+  const ep = s.mailEndpointResolved || null;
+  const skill = s.mailSkill || {};
+  document.getElementById('mail-skill-status').innerHTML = `
+    <table style="width:100%; font-size:13px">
+      <tr><td>当前接入点</td><td>${ep ? '<span class="badge green">' + escapeHtml(ep) + '</span>' : '<span class="badge yellow">未连通</span>'}</td></tr>
+      <tr><td>首选（remote）</td><td style="color:var(--text-muted)">${skill.preferred || '—'}</td></tr>
+      <tr><td>兜底（local）</td><td style="color:var(--text-muted)">${skill.local || '—'}</td></tr>
+      <tr><td>策略</td><td><span class="badge blue">${escapeHtml(s.mailEndpoint || 'auto')}</span></td></tr>
+      <tr><td>最近一次工作流</td><td>${s.lastRun ? new Date(s.lastRun).toLocaleString('zh-CN', { hour12: false }) : '—'}</td></tr>
+    </table>
+  `;
+}
+
+async function saveMailConfig() {
+  const body = {
+    target: document.getElementById('mail-target').value.trim(),
+    mailEndpoint: document.getElementById('mail-endpoint').value,
+    fetchLimit: parseInt(document.getElementById('fetch-limit').value) || 10,
+    fetchDays: parseInt(document.getElementById('fetch-days').value) || 7,
+    autoReply: document.getElementById('auto-reply').checked,
+  };
+  const r = await api('POST', '/api/comm/email-config', body);
+  if (r.ok) {
+    toast('邮件配置已保存');
+    showLog('email-log', `✅ 已保存\n收件人: ${body.target || '(未填)'}\n策略: ${body.mailEndpoint}\nlimit=${body.fetchLimit}, days=${body.fetchDays}`);
+    refreshEmail(); refreshDashboard();
+  } else {
+    toast(r.data?.error || '保存失败', 'error');
+  }
+}
+
+async function probeMail() {
+  showLog('email-log', '🔌 正在探测 mail skill 接入点...\n');
+  const r = await api('POST', '/api/comm/mail-probe');
+  if (r.ok) {
+    const ep = r.data.endpoint;
+    showLog('email-log', ep ? `✅ 可用接入点: ${ep}` : '❌ 所有接入点都不可达');
+    toast(ep ? 'mail skill 已连通' : 'mail skill 不可达', ep ? 'success' : 'error');
+    refreshEmail(); refreshDashboard();
+  } else {
+    toast(r.data?.error || '探测失败', 'error');
+  }
+}
+
+async function fetchInbox() {
+  showLog('email-log', '📥 正在拉取最新邮件...\n');
+  const r = await api('POST', '/api/comm/mail-fetch');
+  const el = document.getElementById('mail-inbox');
+  if (r.ok && r.data.ok) {
+    const emails = r.data.emails || [];
+    if (emails.length === 0) {
+      el.innerHTML = '<p class="empty">收件箱暂无新邮件</p>';
+      showLog('email-log', `✅ 拉取完成（endpoint=${r.data.endpoint}），0 条`);
+    } else {
+      el.innerHTML = emails.map(e => `
+        <div class="msg user">
+          <div class="avatar">📧</div>
+          <div class="msg-body">
+            <div class="msg-meta">
+              <span>${escapeHtml(e.sender || 'unknown')}</span>
+              <span>${new Date(e.date || Date.now()).toLocaleString('zh-CN', { hour12: false })}</span>
+            </div>
+            <div class="msg-content"><strong>${escapeHtml(e.subject || '(无标题)')}</strong>\n${escapeHtml(e.body || '')}</div>
+          </div>
+        </div>
+      `).join('');
+      showLog('email-log', `✅ 拉取完成（endpoint=${r.data.endpoint}），${emails.length} 条`);
+    }
+    refreshDashboard();
+  } else {
+    showLog('email-log', '❌ 拉取失败: ' + (r.data?.error || r.status));
+    toast('拉取邮件失败', 'error');
+  }
+}
+
+async function sendTestMail() {
+  const target = document.getElementById('mail-target').value.trim();
+  if (!target) { toast('请先填写主人邮箱', 'error'); return; }
+  showLog('email-log', `✉️ 正在向 ${target} 发送测试邮件...\n`);
+  const r = await api('POST', '/api/comm/mail-test', { to: target });
+  if (r.ok && r.data.ok) {
+    showLog('email-log', `✅ 测试邮件已发送\nendpoint=${r.data.endpoint}`);
+    toast('测试邮件已发送');
+  } else {
+    showLog('email-log', '❌ 发送失败: ' + (r.data?.error || r.status));
+    toast('发送失败', 'error');
+  }
+}
+
+// ===== Reports =====
+async function refreshReports() {
+  const r = await api('GET', '/api/comm/status');
+  if (!r.ok) return;
+  const reports = r.data.reports ? await loadReports() : [];
+  reportsCache = reports;
+  const el = document.getElementById('report-list');
+  if (reports.length === 0) { el.innerHTML = '<p class="empty">暂无报告，运行一次工作流生成</p>'; return; }
+  el.innerHTML = reports.slice().reverse().map(rp => `
+    <div class="report-item" onclick="showReport('${rp.id}')">
+      <div class="report-title">${escapeHtml(rp.title)}</div>
+      <div class="report-meta">${new Date(rp.timestamp).toLocaleString('zh-CN', { hour12: false })}</div>
+    </div>
+  `).join('');
+}
+
+async function loadReports() {
+  const r = await api('GET', '/api/comm/reports');
+  return r.ok ? (r.data.reports || []) : [];
+}
+
+function showReport(id) {
+  const rp = reportsCache.find(r => r.id === id);
+  if (!rp) return;
+  document.getElementById('report-detail').innerHTML = `
+    <div style="margin-bottom:8px"><strong>${escapeHtml(rp.title)}</strong></div>
+    <div class="report-content">${escapeHtml(rp.content)}</div>
+  `;
+}
+
+// ===== Settings =====
+async function refreshSettings() {
+  const r = await api('GET', '/api/comm/status');
+  if (!r.ok) return;
+  document.getElementById('interval-hours').value = r.data.schedule.intervalHours || 24;
+  document.getElementById('time-of-day').value = r.data.schedule.timeOfDay || '09:00';
+  document.getElementById('schedule-enabled').checked = r.data.schedule.enabled !== false;
+  document.getElementById('work-instructions').value = r.data.workInstructions || '';
+}
+
+async function saveSettings() {
+  const body = {
+    intervalHours: parseInt(document.getElementById('interval-hours').value) || 24,
+    timeOfDay: document.getElementById('time-of-day').value,
+    enabled: document.getElementById('schedule-enabled').checked,
+  };
+  const r = await api('POST', '/api/comm/schedule', body);
+  if (r.ok) { toast('调度设置已保存'); refreshDashboard(); }
+  else toast(r.data?.error || '保存失败', 'error');
+}
+
+async function saveInstructions() {
+  const text = document.getElementById('work-instructions').value;
+  const r = await api('POST', '/api/comm/instructions', { text });
+  if (r.ok) { toast('工作指令已保存'); refreshDashboard(); }
+  else toast(r.data?.error || '保存失败', 'error');
+}
+
+// ===== Skills =====
+async function refreshSkills() {
+  // Just a link page
+}
+
+// ===== init =====
+refreshDashboard();
+</script>
+</body>
+</html>

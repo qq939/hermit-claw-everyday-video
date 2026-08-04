@@ -27,3 +27,11 @@ yarn-error.log*
 config/*.json
 !config/.gitkeep
 sessions/
+
+# Studio assets (regeneratable)
+18089-everydayVideo/studio-assets/
+18089-everydayVideo/lib/config/
+
+# Skill credentials (clawra-selfie holds FAL_KEY)
+skills/**/.env
+18089-everydayVideo/skills/**/.env

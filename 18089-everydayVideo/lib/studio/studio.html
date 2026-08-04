@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Hermit-Claw · Studio</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root {
+  --bg: #0d1117;
+  --surface: #161b22;
+  --surface-2: #1c2129;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --text-bright: #f0f6fc;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --red: #f85149;
+  --yellow: #d29922;
+  --purple: #bc8cff;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  font-size: 14px;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.app { display: flex; min-height: 100vh; }
+.sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; }
+.sidebar h1 { font-size: 18px; color: var(--text-bright); padding: 0 20px 12px; }
+.sidebar .sub { font-size: 11px; color: var(--text-muted); padding: 0 20px 12px; border-bottom: 1px solid var(--border); }
+.sidebar .link { padding: 8px 20px; color: var(--text-muted); font-size: 13px; }
+.sidebar .link:hover { background: var(--surface-2); color: var(--text); }
+
+.main { flex: 1; padding: 24px 32px; max-width: 1300px; }
+.page-title { font-size: 22px; color: var(--text-bright); margin-bottom: 4px; }
+.page-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
+
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin-bottom: 16px; }
+.card h3 { font-size: 15px; margin-bottom: 12px; color: var(--text-bright); }
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: 1fr 1fr; }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 900px) { .grid-3, .grid-4 { grid-template-columns: 1fr 1fr; } .grid-2 { grid-template-columns: 1fr; } }
+
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.stat-card .label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; }
+.stat-card .value { font-size: 22px; font-weight: 700; color: var(--text-bright); margin: 4px 0; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+.badge.green { background: #1a3a2a; color: var(--green); }
+.badge.red { background: #3d1a1a; color: var(--red); }
+.badge.yellow { background: #3d2a1a; color: var(--yellow); }
+.badge.gray { background: #2d333b; color: var(--text-muted); }
+.badge.blue { background: #1a2a3a; color: var(--accent); }
+.badge.purple { background: #2a1a3a; color: var(--purple); }
+
+input, textarea, select {
+  width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+  border-radius: 6px; color: var(--text); font-size: 14px; font-family: inherit;
+}
+input:focus, textarea:focus { border-color: var(--accent); outline: none; }
+textarea { min-height: 80px; resize: vertical; font-family: 'SF Mono', Monaco, monospace; }
+.row { display: flex; gap: 12px; }
+.row > * { flex: 1; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: var(--surface); color: var(--text); transition: all 0.15s; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: #238636; border-color: #2ea043; color: #fff; }
+.btn.primary:hover { background: #2ea043; }
+.btn.accent { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+.btn.accent:hover { background: #388bfd; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.works { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.work-item { border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); padding: 10px; }
+.work-item .work-title { font-size: 13px; font-weight: 600; color: var(--text-bright); margin-bottom: 6px; }
+.work-item .work-meta { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+.work-item .work-thumb { width: 100%; height: 140px; border-radius: 6px; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.work-item .work-thumb img, .work-item .work-thumb svg { max-width: 100%; max-height: 100%; }
+.work-item .work-thumb .empty { color: var(--text-muted); font-size: 12px; }
+
+.prompt-box { background: #000; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font-family: 'SF Mono', Monaco, monospace; font-size: 12px; white-space: pre-wrap; color: #7ee787; max-height: 280px; overflow-y: auto; }
+
+.toast { position: fixed; top: 20px; right: 20px; z-index: 1000; padding: 12px 20px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); color: var(--text); font-size: 14px; opacity: 0; transition: opacity 0.3s; max-width: 400px; }
+.toast.show { opacity: 1; }
+.toast.error { border-color: var(--red); }
+.toast.success { border-color: var(--green); }
+.empty { color: var(--text-muted); padding: 20px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1>🎨 Studio</h1>
+    <div class="sub">Hermit-Claw · 新媒体艺术家</div>
+    <a class="link" href="/studio">总览</a>
+    <a class="link" href="/console">← 回到主控台</a>
+    <div style="flex:1"></div>
+    <div class="sub">PID · <span id="studio-pid">—</span></div>
+  </aside>
+  <main class="main">
+    <h2 class="page-title">🎨 新媒体艺术家工作室</h2>
+    <p class="page-sub">fal.ai 真生图 · 本地 SVG 海报 · 动画 GIF · Markdown 长文 · 角色库 · 指令沉淀</p>
+
+    <div class="grid grid-4" style="margin-bottom:16px">
+      <div class="stat-card"><div class="label">可用 Provider</div><div class="value" id="stat-providers">—</div><div class="value" style="font-size:11px;color:var(--text-muted)" id="stat-providers-detail"></div></div>
+      <div class="stat-card"><div class="label">角色池</div><div class="value" id="stat-characters">—</div></div>
+      <div class="stat-card"><div class="label">交付件</div><div class="value" id="stat-works">—</div></div>
+      <div class="stat-card"><div class="label">沉淀指令</div><div class="value" id="stat-persona">—</div></div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>🎬 创作指令</h3>
+        <div class="form-group" style="margin-bottom:12px">
+          <label>指令（直接写 `!poster 主题`、`!reel 30s 主题`、`!gif 主题` 等）</label>
+          <textarea id="instruction" placeholder="!poster 新媒体艺术家自画像">!poster 新媒体艺术家自画像</textarea>
+        </div>
+        <div class="row">
+          <button class="btn primary" onclick="runInstruction()">🚀 执行</button>
+          <button class="btn accent" onclick="runAndMail()">✉️ 执行 + 发回 master</button>
+          <button class="btn" onclick="refreshAll()">🔄 刷新</button>
+        </div>
+        <div class="prompt-box" id="run-log" style="margin-top:12px; display:none"></div>
+      </div>
+
+      <div class="card">
+        <h3>👤 角色</h3>
+        <div class="row">
+          <input id="char-role" placeholder="role (agent / host / critic)" value="agent">
+          <input id="char-theme" placeholder="主题 (可选)">
+        </div>
+        <div style="margin-top:8px"><button class="btn accent" onclick="ensureCharacter()">🎭 创建 / 复用角色</button></div>
+        <div id="character-list" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>🖼️ 最近交付件</h3>
+      <div id="works-list" class="works"><p class="empty">暂无交付件</p></div>
+    </div>
+
+    <div class="grid grid-2">
+      <div class="card">
+        <h3>🧠 Provider 状态</h3>
+        <div id="providers-list"><p class="empty">加载中...</p></div>
+      </div>
+      <div class="card">
+        <h3>📜 系统提示词增补</h3>
+        <div class="row">
+          <input id="persona-source" placeholder="source (email/manual)" value="manual">
+        </div>
+        <textarea id="persona-text" placeholder="输入主人原话，自动沉淀..." style="margin-top:8px"></textarea>
+        <div style="margin-top:8px"><button class="btn primary" onclick="learnPersona()">💾 学习</button> <button class="btn" onclick="clearPersona()">🧹 清空</button></div>
+        <div class="prompt-box" id="persona-prompt" style="margin-top:12px; max-height:200px"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+async function api(method, path, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  try { return { ok: res.ok, status: res.status, data: JSON.parse(text) }; }
+  catch { return { ok: res.ok, status: res.status, data: text }; }
+}
+function toast(msg, type='success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'toast ' + type + ' show';
+  setTimeout(() => el.classList.remove('show'), 4000);
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&apos;'}[c])); }
+function showLog(id, msg) { const el = document.getElementById(id); el.textContent = msg; el.style.display = 'block'; }
+
+async function refreshAll() {
+  await Promise.all([refreshStatus(), refreshCharacters(), refreshWorks(), refreshProviders(), refreshPersona()]);
+}
+
+async function refreshStatus() {
+  const r = await api('GET', '/api/studio/status');
+  if (!r.ok) return;
+  const s = r.data;
+  const enabled = (s.providers || []).filter(p => p.enabled).length;
+  document.getElementById('stat-providers').textContent = enabled + ' / ' + (s.providers || []).length;
+  document.getElementById('stat-providers-detail').textContent = (s.providers || []).map(p => p.id).join(' · ');
+  document.getElementById('stat-characters').textContent = (s.characters || []).length;
+  document.getElementById('stat-persona').textContent = (s.persona && s.persona.total) || 0;
+}
+
+async function refreshCharacters() {
+  const r = await api('GET', '/api/studio/characters');
+  if (!r.ok) return;
+  const list = r.data.characters || [];
+  document.getElementById('stat-characters').textContent = list.length;
+  const el = document.getElementById('character-list');
+  if (list.length === 0) { el.innerHTML = '<p class="empty">暂无角色</p>'; return; }
+  el.innerHTML = list.slice(0, 6).map(c => `
+    <div class="work-item">
+      <div class="work-title">${escapeHtml(c.name)}</div>
+      <div class="work-meta">${escapeHtml(c.role)} · usage=${c.usageCount || 0}</div>
+      <div class="work-thumb">${c.assetUrl ? `<img src="${c.assetUrl}" alt="">` : '<div class="empty">无素材</div>'}</div>
+    </div>
+  `).join('');
+}
+
+async function refreshWorks() {
+  const r = await api('GET', '/api/studio/works?limit=30');
+  if (!r.ok) return;
+  const works = (r.data.works || []).slice().reverse();
+  document.getElementById('stat-works').textContent = works.length;
+  const el = document.getElementById('works-list');
+  if (works.length === 0) { el.innerHTML = '<p class="empty">暂无交付件</p>'; return; }
+  el.innerHTML = works.map(w => {
+    const url = w.assetUrl || (w.cover && w.cover.assetUrl);
+    return `
+      <div class="work-item">
+        <div class="work-title">${escapeHtml(w.title || w.theme || w.id)}</div>
+        <div class="work-meta">${escapeHtml(w.kind)} · ${escapeHtml(w.status || 'ok')} · ${new Date(w.createdAt).toLocaleString('zh-CN')}</div>
+        <div class="work-thumb">${url ? `<img src="${url}" alt="">` : '<div class="empty">无图</div>'}</div>
+        ${w.storyboard ? `<div class="work-meta">${w.storyboard.length} shots · ${w.durationSec}s</div>` : ''}
+        ${w.note ? `<div class="work-meta">${escapeHtml(w.note)}</div>` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+async function refreshProviders() {
+  const r = await api('GET', '/api/studio/status');
+  if (!r.ok) return;
+  const list = r.data.providers || [];
+  document.getElementById('providers-list').innerHTML = `
+    <table style="width:100%; font-size:13px">
+      ${list.map(p => `
+        <tr>
+          <td style="width:140px;color:var(--text-muted)">${escapeHtml(p.id)}</td>
+          <td>${p.enabled ? '<span class="badge green">enabled</span>' : '<span class="badge red">disabled</span>'}</td>
+          <td style="color:var(--text-muted);font-size:11px">${escapeHtml(JSON.stringify(p.detail || {}))}</td>
+        </tr>
+      `).join('')}
+    </table>
+  `;
+}
+
+async function refreshPersona() {
+  const r = await api('GET', '/api/studio/persona-prompt');
+  if (!r.ok) return;
+  document.getElementById('stat-persona').textContent = (r.data.directives || []).length;
+  document.getElementById('persona-prompt').textContent = r.data.addon || '(空)';
+}
+
+async function runInstruction() {
+  const text = document.getElementById('instruction').value.trim();
+  if (!text) { toast('请填写指令', 'error'); return; }
+  showLog('run-log', '🚀 运行中...\n');
+  const r = await api('POST', '/api/studio/run', { instruction: text, mail: false });
+  if (r.ok) {
+    showLog('run-log', '✅ 完成\n' + JSON.stringify(r.data, null, 2));
+    toast('创作完成');
+    refreshAll();
+  } else {
+    showLog('run-log', '❌ 失败: ' + (r.data && r.data.error || r.status));
+    toast('失败', 'error');
+  }
+}
+
+async function runAndMail() {
+  const text = document.getElementById('instruction').value.trim();
+  if (!text) { toast('请填写指令', 'error'); return; }
+  showLog('run-log', '🚀 运行 + 发邮件...\n');
+  const r = await api('POST', '/api/studio/run', { instruction: text, mail: true });
+  if (r.ok) {
+    showLog('run-log', '✅ 完成\n' + JSON.stringify(r.data, null, 2));
+    toast(r.data.mail && r.data.mail.ok ? '已发送邮件' : '创作完成（邮件未发）');
+    refreshAll();
+  } else {
+    showLog('run-log', '❌ 失败: ' + (r.data && r.data.error || r.status));
+    toast('失败', 'error');
+  }
+}
+
+async function ensureCharacter() {
+  const role = document.getElementById('char-role').value.trim() || 'agent';
+  const theme = document.getElementById('char-theme').value.trim();
+  showLog('run-log', '🎭 创建 / 复用角色...\n');
+  const r = await api('POST', '/api/studio/characters/ensure', { role, theme });
+  if (r.ok) {
+    showLog('run-log', '✅ 角色 ' + (r.data.reused ? '复用' : '新建') + '\n' + JSON.stringify(r.data.character, null, 2));
+    toast(r.data.reused ? '复用角色' : '新建角色');
+    refreshAll();
+  } else {
+    showLog('run-log', '❌ 失败: ' + (r.data && r.data.error || r.status));
+    toast('失败', 'error');
+  }
+}
+
+async function learnPersona() {
+  const text = document.getElementById('persona-text').value.trim();
+  const source = document.getElementById('persona-source').value.trim() || 'manual';
+  if (!text) { toast('请填写主人原话', 'error'); return; }
+  const r = await api('POST', '/api/studio/persona/learn', { text, source });
+  if (r.ok) {
+    toast('学习 ' + r.data.learned + ' 条');
+    document.getElementById('persona-text').value = '';
+    refreshPersona();
+  } else {
+    toast('失败', 'error');
+  }
+}
+
+async function clearPersona() {
+  if (!confirm('确认清空所有沉淀指令？')) return;
+  await api('POST', '/api/studio/persona/clear');
+  refreshPersona();
+  toast('已清空');
+}
+
+document.getElementById('studio-pid').textContent = (location.port || '8088');
+refreshAll();
+</script>
+</body>
+</html>

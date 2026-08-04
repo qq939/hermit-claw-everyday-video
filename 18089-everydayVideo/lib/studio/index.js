@@ -63,3 +63,16 @@ module.exports = {
     persona,
     mailbox,
 };
+
+// Lazy-init: when the module is required, kick off probe once so
+// `enabled` flags reflect real reachability by the time status()
+// is queried from the mounted routes.
+let _initStarted = false;
+function _kickInit() {
+    if (_initStarted) return;
+    _initStarted = true;
+    init().catch((e) => {
+        try { require('fs').appendFileSync(require('path').join(__dirname, '..', '..', 'logs', 'studio.log'), `[${new Date().toISOString()}] studio init failed: ${e.message}\n`); } catch (_) {}
+    });
+}
+_kickInit();

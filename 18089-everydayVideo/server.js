@@ -9,6 +9,7 @@ const fs = require('fs');
 const crypto = require('crypto');
 const skillManager = require('./lib/skill-manager');
 const commManager = require('./lib/comm-manager');
+const studioMount = require('./lib/studio/mount');
 
 const PORT = 8082;
 const PROJECT_DIR = __dirname;
@@ -443,6 +444,60 @@ const server = http.createServer((req, res) => {
         return;
     }
 
+    // API: OOM watch — read cgroup + RSS + heap. Lets master poll after OOM
+    // events to confirm container is healthy before next start.
+    if (req.method === 'GET' && url.pathname === '/api/comm/oom-watch') {
+        let rssKB = 0, vszKB = 0;
+        try {
+            const status = fs.readFileSync('/proc/self/status', 'utf8');
+            const m1 = status.match(/VmRSS:\s+(\d+)/);
+            const m2 = status.match(/VmSize:\s+(\d+)/);
+            if (m1) rssKB = parseInt(m1[1]);
+            if (m2) vszKB = parseInt(m2[1]);
+        } catch (_) {}
+        let cgroupMax = null, cgroupCurrent = null, cgroupVersion = null;
+        try {
+            cgroupMax = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim()) || null;
+            cgroupCurrent = parseInt(fs.readFileSync('/sys/fs/cgroup/memory.current', 'utf8').trim()) || null;
+            cgroupVersion = 'v2';
+        } catch (_) {
+            try {
+                cgroupMax = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.limit_in_bytes', 'utf8').trim()) || null;
+                cgroupCurrent = parseInt(fs.readFileSync('/sys/fs/cgroup/memory/memory.usage_in_bytes', 'utf8').trim()) || null;
+                cgroupVersion = 'v1';
+            } catch (_) {}
+        }
+        const headroomBytes = cgroupMax && cgroupCurrent ? (cgroupMax - cgroupCurrent) : null;
+        const heap = process.memoryUsage();
+        respondJSON(res, 200, {
+            pid: process.pid,
+            rssKB, vszKB,
+            heap: {
+                rssKB: Math.round(heap.rss / 1024),
+                heapUsedKB: Math.round(heap.heapUsed / 1024),
+                heapTotalKB: Math.round(heap.heapTotal / 1024),
+                externalKB: Math.round(heap.external / 1024),
+                arrayBuffersKB: Math.round(heap.arrayBuffers / 1024),
+            },
+            cgroup: cgroupMax ? {
+                version: cgroupVersion,
+                maxBytes: cgroupMax,
+                maxMB: Math.round(cgroupMax / 1024 / 1024),
+                currentBytes: cgroupCurrent,
+                currentMB: Math.round((cgroupCurrent || 0) / 1024 / 1024),
+                headroomBytes,
+                headroomMB: headroomBytes !== null ? Math.round(headroomBytes / 1024 / 1024) : null,
+                usedPct: cgroupMax && cgroupCurrent ? Math.round((cgroupCurrent / cgroupMax) * 100) : null,
+            } : null,
+            host: {
+                memTotalKB: (() => { try { return parseInt(fs.readFileSync('/proc/meminfo', 'utf8').match(/MemTotal:\s+(\d+)/)[1]); } catch (_) { return null; } })(),
+                memAvailKB: (() => { try { return parseInt(fs.readFileSync('/proc/meminfo', 'utf8').match(/MemAvailable:\s+(\d+)/)[1]); } catch (_) { return null; } })(),
+            },
+            oomEventLog: (() => { try { return fs.readFileSync(path.join(LOG_DIR, '..', 'logs', 'oom-events.log'), 'utf8'); } catch (_) { return null; } })(),
+        });
+        return;
+    }
+
     // API: run workflow now
     if (req.method === 'POST' && url.pathname === '/api/comm/run-now') {
         commManager.runWorkflow()
@@ -455,6 +510,25 @@ const server = http.createServer((req, res) => {
     if (req.method === 'GET' && url.pathname === '/api/comm/reports') {
         const reports = commManager.getReports();
         respondJSON(res, 200, { reports });
+        return;
+    }
+
+    // ---- Studio routes (mounted from lib/studio/mount.js, same port 8082) ----
+    if (url.pathname === '/studio' || url.pathname.startsWith('/api/studio/')) {
+        Promise.resolve(studioMount.handle(req, res, url))
+            .then((handled) => {
+                if (!handled && !res.headersSent) {
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('Not Found');
+                }
+            })
+            .catch((e) => {
+                appendRunLog(`studio mount error: ${e.message}`, { always: true });
+                if (!res.headersSent) {
+                    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('studio error');
+                }
+            });
         return;
     }
 

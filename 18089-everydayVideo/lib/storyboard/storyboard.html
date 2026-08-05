@@ -278,6 +278,7 @@
   <h2>导出 · Export</h2>
   <div class="export-bar">
     <input id="exportTitle" placeholder="标题（默认自动）" />
+    <button id="exportHtml" onclick="exportHtml()">导出 HTML（脚本）</button>
     <button class="primary" id="exportPdf" onclick="exportPdf()">导出 PDF 并上传 OBS</button>
     <span class="status" id="exportStatus"></span>
   </div>
@@ -837,6 +838,26 @@ async function saveObsSettings() {
 }
 
 /* ====== export ====== */
+async function exportHtml() {
+  const btn = document.getElementById('exportHtml');
+  btn.disabled = true;
+  document.getElementById('exportStatus').textContent = '正在渲染 HTML…';
+  try {
+    const title = document.getElementById('exportTitle').value.trim();
+    const j = await api('POST', '/api/storyboard/export-html', { title });
+    if (j.ok && j.html) {
+      document.getElementById('exportStatus').textContent =
+        `HTML 已保存：${j.html.path}（${(j.html.bytes / 1024).toFixed(1)} KB）`;
+      toast('HTML 已生成', 'ok');
+    } else {
+      document.getElementById('exportStatus').textContent = '导出失败';
+      toast(j.error || '导出失败', 'err');
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function exportPdf() {
   const btn = document.getElementById('exportPdf');
   btn.disabled = true;
@@ -846,8 +867,11 @@ async function exportPdf() {
     const j = await api('POST', '/api/storyboard/export-pdf', { title });
     if (j.ok) {
       const f = j.file;
+      const htmlNote = j.html ? ` + HTML（${j.html.filename}）` : '';
       document.getElementById('exportStatus').textContent =
-        f.status === 'uploaded' ? `已上传 OBS：${f.obsKey}` : `本地已保存：${f.localPath}（OBS 未配置）`;
+        f.status === 'uploaded'
+          ? `已上传 OBS：${f.obsKey}${htmlNote}`
+          : `本地已保存：${f.localPath}${htmlNote}（OBS 未配置）`;
       toast('PDF 已生成', 'ok');
       reloadState();
     } else {

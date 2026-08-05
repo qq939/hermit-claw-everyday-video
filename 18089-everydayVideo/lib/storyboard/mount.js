@@ -27,6 +27,7 @@
 //   POST   /api/storyboard/shots/:id/remove         -> remove version from shot
 //   GET    /api/storyboard/config                   -> get storyboard.json
 //   POST   /api/storyboard/config                   -> update storyboard.json
+//   POST   /api/storyboard/export-html              -> render printable HTML (canonical)
 //   POST   /api/storyboard/export-pdf               -> render PDF + upload to OBS
 //   GET    /api/storyboard/exports/:key             -> download a past export
 
@@ -35,6 +36,7 @@ const path = require('path');
 const crypto = require('crypto');
 const lib = require('./lib');
 const { renderStoryboardPdf } = require('./pdf');
+const { renderStoryboardHtml, writeStoryboardHtml } = require('./pdf-template');
 
 const PROJECT_DIR = path.resolve(__dirname, '..', '..');
 const HTML_PATH = path.join(__dirname, 'storyboard.html');
@@ -52,6 +54,29 @@ function parseJSONBody(req, cb) {
         catch (_) { cb(null); }
     });
     req.on('error', () => cb(null));
+}
+
+// Collect the data the printable HTML / PDF needs from one project.
+// Both renderers consume the same shape so they never drift.
+function _buildStoryboardData(body) {
+    const projectId = (body && body.projectId) || lib.getDefaultProjectId();
+    const project = projectId ? lib.getProject(projectId) : null;
+    const items = lib.listItems({ projectId });
+    const versions = lib.listVersions({ projectId });
+    const shots = lib.listShots({ projectId });
+    const cfg = lib.getConfig();
+    const title = (body && body.title)
+        || `${project ? project.name : (cfg.pdfFooter || 'Storyboard')} · ${lib.nowIso().slice(0, 10)}`;
+    return {
+        projectId: project ? project.id : null,
+        projectName: project ? project.name : (body && body.project) || null,
+        projectSlug: project ? project.slug : null,
+        title,
+        generatedAt: lib.nowIso(),
+        items,
+        versions,
+        shots,
+    };
 }
 
 // ----- tiny multipart parser (no deps) -----
@@ -589,36 +614,51 @@ async function handle(req, res, url) {
         return true;
     }
 
+    // ---- export html (canonical printable output) ----
+    if (req.method === 'POST' && url.pathname === '/api/storyboard/export-html') {
+        parseJSONBody(req, async (body) => {
+            try {
+                const data = _buildStoryboardData(body);
+                const out = writeStoryboardHtml(data, lib.EXPORT_DIR);
+                respondJSON(res, 200, {
+                    ok: true,
+                    html: { path: out.path, filename: out.filename, bytes: Buffer.byteLength(out.html, 'utf8') },
+                });
+            } catch (e) {
+                respondJSON(res, 500, { error: e.message });
+            }
+        });
+        return true;
+    }
+
     // ---- export pdf ----
     if (req.method === 'POST' && url.pathname === '/api/storyboard/export-pdf') {
         parseJSONBody(req, async (body) => {
             try {
-                const projectId = (body && body.projectId) || lib.getDefaultProjectId();
-                const project = projectId ? lib.getProject(projectId) : null;
-                const items = lib.listItems({ projectId });
-                const versions = lib.listVersions({ projectId });
-                const shots = lib.listShots({ projectId });
+                const data = _buildStoryboardData(body);
                 const versionsById = {};
-                for (const v of versions) versionsById[v.id] = { ...v, item: items.find((x) => x.id === v.itemId) };
-                const cfg = lib.getConfig();
-                const title = (body && body.title)
-                    || `${project ? project.name : (cfg.pdfFooter || 'Storyboard')} · ${lib.nowIso().slice(0, 10)}`;
+                for (const v of data.versions) versionsById[v.id] = { ...v, item: data.items.find((x) => x.id === v.itemId) };
                 const buf = renderStoryboardPdf({
-                    title,
-                    project: project ? project.name : (body && body.project),
-                    projectSlug: project ? project.slug : null,
-                    characters: items,                 // name kept for PDF readability
-                    shots,
+                    title: data.title,
+                    project: data.projectName,
+                    projectSlug: data.projectSlug,
+                    characters: data.items,
+                    shots: data.shots,
                     versionsByCharacter: versionsById,
-                    exports: cfg.exports || [],
-                    generatedAt: lib.nowIso(),
+                    generatedAt: data.generatedAt,
                 });
                 const fname = `storyboard-${Date.now()}.pdf`;
                 const localPath = path.join(lib.EXPORT_DIR, fname);
                 fs.writeFileSync(localPath, buf);
+                // Also write the HTML version alongside it. The HTML is
+                // the canonical "script" — the PDF is just a print
+                // form. The two share the same slug so it's obvious
+                // they came from the same export.
+                const htmlOut = writeStoryboardHtml(data, lib.EXPORT_DIR);
                 // Upload to OBS if configured, else mark pending.
                 const obsKey = `exports/${fname}`;
-                const projectSlug = project ? project.slug : 'unscoped';
+                const projectSlug = data.projectSlug || 'unscoped';
+                const cfg = lib.getConfig();
                 let up;
                 if (cfg.obsEndpoint) {
                     up = await obsUpload(localPath, obsKey, projectSlug);
@@ -628,16 +668,17 @@ async function handle(req, res, url) {
                 const entry = {
                     at: lib.nowIso(),
                     localPath,
+                    htmlPath: htmlOut.path,
                     bytes: buf.length,
                     obsKey: up && up.ok ? obsKey : null,
                     obsFullName: up && up.ok ? up.fullName : null,
-                    projectId: project ? project.id : null,
-                    projectSlug: project ? project.slug : null,
+                    projectId: data.projectId,
+                    projectSlug: data.projectSlug,
                     status: up && up.ok ? 'uploaded' : 'local-only',
                     error: up && up.ok ? null : (up && up.error),
                 };
                 lib.recordExport(entry);
-                respondJSON(res, 200, { ok: true, file: entry });
+                respondJSON(res, 200, { ok: true, file: entry, html: { path: htmlOut.path, filename: htmlOut.filename } });
             } catch (e) {
                 respondJSON(res, 500, { error: e.message });
             }

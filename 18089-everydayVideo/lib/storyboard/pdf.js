@@ -850,40 +850,6 @@ function _shotPage(stream, doc, shot, characters, versionsByItem, versionsByChar
     return s;
 }
 
-function _exportsPage(stream, doc, exports) {
-    let s = stream;
-    let y = PAGE_H - 60;
-    s = _sectionTitle(s, doc, MARGIN, y, '导出历史 / Exports', COLORS.accent);
-    y -= 18;
-    // Column header
-    s = _text(s, doc, MARGIN, y, '/F1', 8, COLORS.fg3, 'TIME');
-    s = _text(s, doc, MARGIN + 150, y, '/F1', 8, COLORS.fg3, 'TARGET');
-    s = _text(s, doc, MARGIN + 360, y, '/F1', 8, COLORS.fg3, 'STATUS');
-    s = _text(s, doc, PAGE_W - MARGIN - 60, y, '/F1', 8, COLORS.fg3, 'BYTES');
-    s = _line(s, MARGIN, y - 4, PAGE_W - MARGIN, y - 4, COLORS.line, 0.5);
-    y -= 16;
-    for (const e of exports.slice(0, 30)) {
-        const at = (e.at || '').slice(0, 19).replace('T', ' ');
-        const target = e.obsKey || (e.localPath || '').split('/').pop() || '-';
-        const status = e.status || '-';
-        const statusColor = status === 'uploaded' ? COLORS.accent2 : COLORS.fg3;
-        s = _text(s, doc, MARGIN, y, '/F1', 9, COLORS.fg, at);
-        s = _text(s, doc, MARGIN + 150, y, '/F1', 9, COLORS.fg, target);
-        s = _text(s, doc, MARGIN + 360, y, '/F2', 9, statusColor, status);
-        if (e.bytes) {
-            const b = (e.bytes / 1024).toFixed(1) + ' KB';
-            const bw = _approxTextWidth(b, 9);
-            s = _text(s, doc, PAGE_W - MARGIN - bw, y, '/F1', 9, COLORS.fg3, b);
-        }
-        y -= 14;
-        if (y < MARGIN + 30) break;
-    }
-    if (!exports.length) {
-        s = _text(s, doc, MARGIN, y, '/F1', 10, COLORS.fg3, '(no exports yet)');
-    }
-    return s;
-}
-
 function renderStoryboardPdf({
     title,
     project,
@@ -891,7 +857,6 @@ function renderStoryboardPdf({
     characters = [],
     shots = [],
     versionsByCharacter = {},
-    exports = [],
     generatedAt,
 }) {
     const doc = new PDFDoc();
@@ -900,9 +865,9 @@ function renderStoryboardPdf({
     const versionsByItem = _buildVersionMapPerItem(characters, versionsByCharacter);
 
     // Compute total pages so footer can render "X / Y".
-    // 1 cover + 1 library-item per item + 1 page per shot + 1 exports (if any)
+    // 1 cover + 1 library-item per item + 1 page per shot.
     const libPages = characters.length;
-    const totalPages = 1 + libPages + shots.length + (exports.length ? 1 : 0);
+    const totalPages = 1 + libPages + shots.length;
     let pageNum = 0;
 
     // ─── Cover page ───────────────────────────────────────────────
@@ -943,16 +908,6 @@ function renderStoryboardPdf({
         pageNum++;
         stream = _pageHeader(stream, doc, project, `Shot #${shot.index || '?'}`);
         stream = _shotPage(stream, doc, shot, characters, versionsByItem, versionsByCharacter);
-        stream = _pageFooter(stream, doc, pageNum, totalPages, projectSlug || project);
-        doc.addPage(PAGE_W, PAGE_H, stream);
-    }
-
-    // ─── Exports page ─────────────────────────────────────────────
-    if (exports.length) {
-        let stream = '';
-        pageNum++;
-        stream = _pageHeader(stream, doc, project, 'Exports');
-        stream = _exportsPage(stream, doc, exports);
         stream = _pageFooter(stream, doc, pageNum, totalPages, projectSlug || project);
         doc.addPage(PAGE_W, PAGE_H, stream);
     }

@@ -21,10 +21,12 @@
   const STYLE_ID = 'sb-console-style';
   if (document.getElementById(STYLE_ID)) return; // already injected
   const css = `
-    #page-storyboard { padding: 18px; }
+    #page-storyboard { padding: 18px; position: relative; }
     #page-storyboard h2.page-title { font-size: 18px; margin: 0 0 4px 0; }
     #page-storyboard p.page-sub { color: #6b7280; font-size: 13px; margin: 0 0 14px 0; }
-    #sb-layout { display: grid; grid-template-rows: auto 1fr auto; gap: 14px; height: calc(100vh - 130px); }
+    /* Two stacked regions: card-strip on top, shots table fills the rest.
+       No bottom block — export lives in the floating button. */
+    #sb-layout { display: grid; grid-template-rows: auto 1fr; gap: 14px; height: calc(100vh - 140px); }
     #sb-tabs { display: flex; gap: 6px; border-bottom: 1px solid var(--line, #2a2f3a); padding: 0 0 6px 0; }
     #sb-tabs .tab { padding: 6px 12px; cursor: pointer; border-radius: 6px 6px 0 0; color: #9aa3b2; font-size: 13px; }
     #sb-tabs .tab.active { background: #161b22; color: #e6edf3; border: 1px solid var(--line, #2a2f3a); border-bottom-color: #161b22; margin-bottom: -1px; }
@@ -62,6 +64,15 @@
     #sb-bottom input { background: #0a0d13; color: #e6edf3; border: 1px solid #2a2f3a; border-radius: 4px; padding: 6px 8px; }
     #sb-bottom .exports { margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; }
     #sb-bottom .export-chip { background: #0a0d13; border: 1px solid #2a2f3a; border-radius: 4px; padding: 4px 8px; font-size: 11px; }
+    /* Floating export button — pinned to the page bottom-right corner,
+       does NOT take layout space, so the shots table gets all the room. */
+    #sb-fab { position: absolute; right: 18px; bottom: 18px; z-index: 50;
+              background: #11151d; border: 1px solid #2a2f3a; border-radius: 10px;
+              padding: 6px 10px; display: flex; gap: 8px; align-items: center;
+              box-shadow: 0 4px 14px rgba(0,0,0,0.5); }
+    #sb-fab .sb-btn { font-size: 12px; padding: 4px 10px; }
+    #sb-fab .status { font-size: 11px; color: #9aa3b2; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #sb-fab .last { font-size: 10px; color: #6b7280; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .sb-btn { background: #161b22; color: #e6edf3; border: 1px solid #2a2f3a; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
     .sb-btn:hover { border-color: #58a6ff; }
     .sb-btn.primary { background: #58a6ff; color: #0b0e14; border-color: #58a6ff; font-weight: 600; }
@@ -143,16 +154,14 @@
         </table>
         <div style="padding:10px;"><button class="sb-btn" id="sb-add-shot">+ 新增镜头</button></div>
       </div>
-      <div id="sb-bottom">
-        <div class="row">
-          <input id="sb-pdf-title" placeholder="PDF 标题（默认自动生成日期）" style="flex:1;max-width:380px;">
-          <button class="sb-btn primary" id="sb-export-btn">⬇ 导出 PDF → 上传 OBS</button>
-          <span class="sb-muted" id="sb-export-status"></span>
-          <span style="flex:1"></span>
-          <button class="sb-btn" id="sb-cfg-btn">⚙ OBS 设置</button>
-        </div>
-        <div class="exports" id="sb-exports-list"></div>
-      </div>
+    </div>
+
+    <!-- Floating export button (bottom-right corner, no layout footprint) -->
+    <div id="sb-fab">
+      <button class="sb-btn primary" id="sb-export-btn" title="导出当前项目为 PDF 并上传到 OBS">⬇ PDF</button>
+      <span class="status" id="sb-export-status"></span>
+      <span class="last" id="sb-last-export"></span>
+      <button class="sb-btn" id="sb-cfg-btn" title="OBS 设置">⚙</button>
     </div>
 
     <!-- editor modal -->
@@ -403,15 +412,15 @@
     },
 
     renderExports() {
-      const list = document.getElementById('sb-exports-list');
-      list.innerHTML = '';
+      const last = document.getElementById('sb-last-export');
+      if (!last) return;
       const exps = (this.state.config && this.state.config.exports) || [];
-      if (!exps.length) { list.appendChild(this.el(`<span class="sb-muted">还没有导出记录</span>`)); return; }
-      exps.slice(0, 8).forEach((e) => {
-        const fname = (e.localPath || '').split('/').pop();
-        const a = this.el(`<a class="export-chip" href="/api/storyboard/exports/${encodeURIComponent(fname)}">${this.esc((e.at || '').slice(0,19))} · ${e.status} · ${(e.bytes||0).toLocaleString()}B${e.obsKey ? ' · ' + this.esc(e.obsKey) : ''}</a>`);
-        list.appendChild(a);
-      });
+      if (!exps.length) { last.textContent = '尚未导出'; return; }
+      const e = exps[0];
+      const when = (e.at || '').slice(0, 19).replace('T', ' ');
+      const fname = (e.localPath || '').split('/').pop();
+      const dl = fname ? `<a href="/api/storyboard/exports/${encodeURIComponent(fname)}" target="_blank" style="color:#58a6ff;">${this.esc(fname.slice(-22))}</a>` : '';
+      last.innerHTML = `${this.esc(when)} · ${this.esc(e.status)} · ${dl}${e.obsKey ? ' · ' + this.esc(e.obsKey) : ''}`;
     },
 
     openCreateItem(kind) {
@@ -569,11 +578,10 @@
     status.textContent = '生成中…';
     try {
       const r = await SB.api('POST', '/api/storyboard/export-pdf', {
-        title: document.getElementById('sb-pdf-title').value || undefined,
         projectId: SB.state.currentProjectId,
       });
-      const tag = r.file.projectSlug ? `（项目 ${r.file.projectSlug}）` : '';
-      status.textContent = r.file.status + ' · ' + (r.file.obsKey || '本地') + ' ' + tag;
+      const tag = r.file.projectSlug ? `· ${r.file.projectSlug}` : '';
+      status.textContent = r.file.status + ' ' + tag;
       SB.state.config.exports = [r.file, ...(SB.state.config.exports || [])].slice(0, 50);
       SB.renderExports();
       SB.toast(r.file.status === 'uploaded' ? `已上传 OBS · ${r.file.obsKey}` : '本地已保存（OBS 不可达）');

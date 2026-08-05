@@ -28,9 +28,17 @@ class PDFDoc {
     constructor() {
         this.objects = []; // array of Uint8Array (or Buffer) bodies
         this.offsets = [];
-        // Reserve 1 for the catalog placeholder
+        // Object layout:
+        //   1 = Catalog (placeholder, finalized at the end)
+        //   2 = Pages   (placeholder, finalized at the end)
+        //   3 = F1 (Helvetica)
+        //   4 = F2 (Helvetica-Bold)
+        //   5+ = pages, content streams, images, etc.
         this._push('<< /Type /Catalog /Pages 2 0 R >>');
-        // Pages object will reference page IDs we'll allocate.
+        this._push('<< /Type /Pages /Count 0 /Kids [] >>');
+        // Built-in fonts: just refer to the standard 14.
+        this._push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>');
+        this._push('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>');
         this._pageIds = [];
     }
 
@@ -43,8 +51,14 @@ class PDFDoc {
         return this._push(body);
     }
 
-    addPage(widthPt, heightPt, contentStream, fontIds) {
-        const pageNum = this._push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${widthPt} ${heightPt}] /Resources << /Font << ${fontIds.map((id, i) => `/F${i + 1} ${id} 0 R`).join(' ')} >> >> /Contents ${this.objects.length + 1} 0 R >>`);
+    addPage(widthPt, heightPt, contentStream) {
+        // F1=3, F2=4 — set up at construction.
+        const contentId = this.objects.length + 2; // after we push page+content
+        const pageNum = this._push(
+            `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${widthPt} ${heightPt}] ` +
+            `/Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> ` +
+            `/Contents ${contentId} 0 R >>`
+        );
         this._push(`<< /Length ${Buffer.byteLength(contentStream, 'utf8')} >>\nstream\n${contentStream}\nendstream`);
         this._pageIds.push(pageNum);
         return pageNum;
@@ -176,12 +190,6 @@ function embedImage(doc, imagePath) {
 const PAGE_W = 595.28; // A4 portrait, points
 const PAGE_H = 841.89;
 const MARGIN = 36;
-const FONT_HELV = 'Helvetica';
-
-function _addFonts(doc) {
-    // Use built-in fonts by referencing names — no font object needed.
-    return [];
-}
 
 function _wrap(text, max) {
     const out = [];
@@ -206,63 +214,83 @@ function _wrap(text, max) {
 
 function _escapePdfString(s) { return _esc(s); }
 
+function _kindLabel(k) { return { character: '角色', scene: '场景', prop: '道具' }[k] || k || '-'; }
+
 function renderStoryboardPdf({ title, project, characters, shots, versionsByCharacter, exports = [] }) {
     const doc = new PDFDoc();
-    const fontIds = []; // built-in
 
     // Cover page.
     let y = PAGE_H - MARGIN;
-    let stream = `BT /F2 22 Tf ${MARGIN} ${y} Td (${_escapePdfString(title || "Storyboard")} Tj ET\n`;
+    let stream = `BT /F2 22 Tf ${MARGIN} ${y} Td (${_escapePdfString(title || "Storyboard")}) Tj ET\n`;
     y -= 30;
-    stream += `BT /F1 10 Tf ${MARGIN} ${y} Td (Generated: ${_escapePdfString(new Date().toISOString())}) Tj ET\n`;
+    stream += `BT /F1 10 Tf ${MARGIN} ${y} Td (${_escapePdfString('Generated: ' + new Date().toISOString())}) Tj ET\n`;
     y -= 14;
-    stream += `BT /F1 10 Tf ${MARGIN} ${y} Td (Hermit-Claw · ${_escapePdfString(project || '')}) Tj ET\n`;
-    y -= 20;
+    if (project) {
+        stream += `BT /F1 10 Tf ${MARGIN} ${y} Td (${_escapePdfString('Project: ' + project)}) Tj ET\n`;
+        y -= 14;
+    }
+    stream += `BT /F1 10 Tf ${MARGIN} ${y} Td (Hermit-Claw · storyboard) Tj ET\n`;
+    y -= 22;
 
-    // Character roster on cover.
-    stream += `BT /F2 13 Tf ${MARGIN} ${y} Td (Characters) Tj ET\n`;
+    // Character / scene / prop roster on cover.
+    stream += `BT /F2 13 Tf ${MARGIN} ${y} Td (Roster) Tj ET\n`;
     y -= 16;
     for (const c of characters) {
         const v = c.currentVersionId ? versionsByCharacter[c.currentVersionId] : null;
-        const label = `· ${c.name} (${c.role || '-'})${v ? '  v' + v.versionNo : '  (no version yet)'}`;
+        const label = `· [${_kindLabel(c.kind)}] ${c.name}${v ? '  v' + v.versionNo : '  (no version yet)'}`;
         stream += `BT /F1 10 Tf ${MARGIN} ${y} Td (${_escapePdfString(label)}) Tj ET\n`;
         y -= 12;
         if (y < MARGIN + 40) break;
     }
 
-    doc.addPage(PAGE_W, PAGE_H, stream, fontIds.length ? fontIds : ['1 0 R']);
+    doc.addPage(PAGE_W, PAGE_H, stream);
 
     // One page per shot.
     for (const shot of shots) {
         let y2 = PAGE_H - MARGIN;
         let s = '';
-        s += `BT /F2 14 Tf ${MARGIN} ${y2} Td (Shot ${shot.index}  ·  v${shot.versionNo}) Tj ET\n`;
+        s += `BT /F2 14 Tf ${MARGIN} ${y2} Td (${_escapePdfString(`Shot #${shot.index}  ·  v${shot.versionNo}`)}) Tj ET\n`;
         y2 -= 18;
-        s += `BT /F1 10 Tf ${MARGIN} ${y2} Td (${_escapePdfString(shot.tIn)} -> ${_escapePdfString(shot.tOut)}) Tj ET\n`;
+        s += `BT /F1 10 Tf ${MARGIN} ${y2} Td (${_escapePdfString(`${shot.tIn || '00:00'}  ->  ${shot.tOut || '00:05'}`)}) Tj ET\n`;
         y2 -= 16;
 
-        // Character chips
-        const charLabels = (shot.characterVersionIds || [])
-            .map((vid) => {
-                const v = versionsByCharacter[vid];
-                if (!v) return null;
-                const c = characters.find((x) => x.id === v.characterId);
-                return c ? `${c.name} v${v.versionNo}` : null;
-            })
-            .filter(Boolean);
-        const charLine = charLabels.length ? `Cast: ${charLabels.join(' / ')}` : 'Cast: —';
-        s += `BT /F1 10 Tf ${MARGIN} ${y2} Td (${_escapePdfString(charLine)}) Tj ET\n`;
-        y2 -= 16;
+        // Cast / scene / prop chips
+        const lookupLabel = (vid, kindSlot, kindLabel2) => {
+            const v = versionsByCharacter[vid];
+            if (!v) return null;
+            const c = characters.find((x) => x.id === v.itemId);
+            return c ? `${c.name} v${v.versionNo}` : null;
+        };
+        const castLabels = (shot.castVersionIds || []).map((vid) => lookupLabel(vid, 'cast')).filter(Boolean);
+        const sceneLabels = (shot.sceneVersionIds || []).map((vid) => lookupLabel(vid, 'scene')).filter(Boolean);
+        const propLabels = (shot.propVersionIds || []).map((vid) => lookupLabel(vid, 'prop')).filter(Boolean);
+        if (castLabels.length) {
+            s += `BT /F1 10 Tf ${MARGIN} ${y2} Td (${_escapePdfString('Cast: ' + castLabels.join(' / '))}) Tj ET\n`;
+            y2 -= 13;
+        }
+        if (sceneLabels.length) {
+            s += `BT /F1 10 Tf ${MARGIN} ${y2} Td (${_escapePdfString('Scene: ' + sceneLabels.join(' / '))}) Tj ET\n`;
+            y2 -= 13;
+        }
+        if (propLabels.length) {
+            s += `BT /F1 10 Tf ${MARGIN} ${y2} Td (${_escapePdfString('Props: ' + propLabels.join(' / '))}) Tj ET\n`;
+            y2 -= 13;
+        }
+        y2 -= 4;
 
         // Description wrapped
         const descLines = _wrap(shot.description || '', 75);
-        for (const line of descLines.slice(0, 18)) {
-            s += `BT /F1 11 Tf ${MARGIN} ${y2} Td (${_escapePdfString(line)}) Tj ET\n`;
+        if (descLines.length) {
+            s += `BT /F2 11 Tf ${MARGIN} ${y2} Td (Description:) Tj ET\n`;
             y2 -= 13;
+            for (const line of descLines.slice(0, 24)) {
+                s += `BT /F1 11 Tf ${MARGIN} ${y2} Td (${_escapePdfString(line)}) Tj ET\n`;
+                y2 -= 13;
+            }
         }
         if (shot.notes) {
             y2 -= 4;
-            s += `BT /F1 9 Tf ${MARGIN} ${y2} Td (Notes:) Tj ET\n`;
+            s += `BT /F2 9 Tf ${MARGIN} ${y2} Td (Notes:) Tj ET\n`;
             y2 -= 11;
             for (const line of _wrap(shot.notes, 78).slice(0, 8)) {
                 s += `BT /F1 9 Tf ${MARGIN} ${y2} Td (${_escapePdfString(line)}) Tj ET\n`;
@@ -270,12 +298,15 @@ function renderStoryboardPdf({ title, project, characters, shots, versionsByChar
             }
         }
 
-        // Box for the visual.
-        const boxY = Math.max(y2 - 200, MARGIN);
-        s += `0.85 0.85 0.85 RG 1 w ${MARGIN} ${boxY} ${PAGE_W - 2 * MARGIN} ${(y2 - boxY) - 10} re S\n`;
+        // Box for the visual placeholder.
+        const boxH = 180;
+        const boxY = Math.max(MARGIN, MARGIN + 20);
+        s += `0.85 0.85 0.85 RG 1 w ${MARGIN} ${boxY} ${PAGE_W - 2 * MARGIN} ${boxH} re S\n`;
+        s += `0.55 0.55 0.55 RG 1 w ${MARGIN} ${boxY + boxH / 2} m ${PAGE_W - MARGIN} ${boxY + boxH / 2} l S\n`;
+        s += `0.55 0.55 0.55 RG 1 w ${MARGIN + (PAGE_W - 2 * MARGIN) / 2} ${boxY} m ${MARGIN + (PAGE_W - 2 * MARGIN) / 2} ${boxY + boxH} l S\n`;
         s += `BT /F1 9 Tf ${MARGIN + 6} ${boxY + 6} Td (visual preview placeholder) Tj ET\n`;
 
-        doc.addPage(PAGE_W, PAGE_H, s, fontIds.length ? fontIds : ['1 0 R']);
+        doc.addPage(PAGE_W, PAGE_H, s);
     }
 
     // Exports index page.
@@ -288,7 +319,7 @@ function renderStoryboardPdf({ title, project, characters, shots, versionsByChar
             y3 -= 11;
             if (y3 < MARGIN) break;
         }
-        doc.addPage(PAGE_W, PAGE_H, s, fontIds.length ? fontIds : ['1 0 R']);
+        doc.addPage(PAGE_W, PAGE_H, s);
     }
 
     return doc.finalize();

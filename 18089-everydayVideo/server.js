@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const skillManager = require('./lib/skill-manager');
 const commManager = require('./lib/comm-manager');
 const studioMount = require('./lib/studio/mount');
+const storyboardMount = require('./lib/storyboard/mount');
 
 const PORT = 8082;
 const PROJECT_DIR = __dirname;
@@ -527,6 +528,25 @@ const server = http.createServer((req, res) => {
                 if (!res.headersSent) {
                     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
                     res.end('studio error');
+                }
+            });
+        return;
+    }
+
+    // ---- Storyboard routes (mounted from lib/storyboard/mount.js, same port 8082) ----
+    if (url.pathname === '/studio/storyboard' || url.pathname.startsWith('/api/storyboard/')) {
+        Promise.resolve(storyboardMount.handle(req, res, url))
+            .then((handled) => {
+                if (!handled && !res.headersSent) {
+                    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('Not Found');
+                }
+            })
+            .catch((e) => {
+                appendRunLog(`storyboard mount error: ${e.message}`, { always: true });
+                if (!res.headersSent) {
+                    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+                    res.end('storyboard error');
                 }
             });
         return;

@@ -1,0 +1,17 @@
+{
+  "obsEndpoint": "",
+  "obsBucket": "hermit-claw",
+  "obsApiKey": "",
+  "pdfFooter": "Hermit-Claw · storyboard",
+  "exports": [
+    {
+      "at": "2026-08-05T09:39:11.250Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785922751246.pdf",
+      "bytes": 1197,
+      "obsKey": null,
+      "status": "local-only",
+      "error": "obsEndpoint not configured"
+    }
+  ],
+  "updatedAt": "2026-08-05T09:39:11.250Z"
+}

@@ -1,0 +1,890 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Hermit-Claw · 分镜本</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg-2: #161b22; --bg-3: #1f242c;
+    --line: #30363d; --line-2: #484f58;
+    --fg: #e6edf3; --fg-2: #adbac7; --fg-3: #768390;
+    --accent: #58a6ff; --accent-2: #7ee787; --warn: #f0883e; --err: #f85149;
+    --r: 6px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  header {
+    position: sticky; top: 0; z-index: 10; background: linear-gradient(var(--bg) 80%, transparent);
+    padding: 14px 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 14px;
+  }
+  header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+  header .meta { color: var(--fg-3); font-size: 12px; }
+  header .spacer { flex: 1; }
+  header button, header select {
+    background: var(--bg-2); color: var(--fg); border: 1px solid var(--line); padding: 6px 12px;
+    border-radius: var(--r); cursor: pointer; font-size: 12px;
+  }
+  header button.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+
+  section { padding: 14px 18px; }
+  section h2 {
+    font-size: 12px; margin: 0 0 8px 0; color: var(--fg-3); text-transform: uppercase;
+    letter-spacing: 0.08em; font-weight: 600;
+  }
+
+  /* ===== Row 1: Library strip ===== */
+  .lib-toolbar { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
+  .lib-toolbar input, .lib-toolbar select {
+    background: var(--bg-2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 6px 10px; font-size: 12px; min-width: 120px;
+  }
+  .lib-strip {
+    display: flex; gap: 10px; overflow-x: auto; padding: 4px 0 14px 0;
+    scrollbar-color: var(--line-2) transparent;
+  }
+  .char-card {
+    flex: 0 0 132px; background: var(--bg-2); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 8px; cursor: pointer; transition: border-color 0.1s;
+    position: relative;
+  }
+  .char-card:hover { border-color: var(--line-2); }
+  .char-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(88,166,255,0.15); }
+  .char-card .portrait {
+    width: 100%; aspect-ratio: 1/1; border-radius: var(--r); background: var(--bg-3);
+    display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 6px;
+    color: var(--fg-3); font-size: 24px;
+  }
+  .char-card .portrait img { width: 100%; height: 100%; object-fit: cover; }
+  .char-card .name { font-weight: 600; font-size: 13px; }
+  .char-card .row2 { display: flex; justify-content: space-between; color: var(--fg-3); font-size: 11px; margin-top: 2px; }
+  .char-card .ver-badge {
+    position: absolute; top: 6px; right: 6px; background: rgba(13,17,23,0.85); color: var(--accent-2);
+    padding: 2px 6px; border-radius: 99px; font-size: 10px; font-weight: 600; border: 1px solid var(--line);
+  }
+  .char-card .kind-badge {
+    position: absolute; top: 6px; left: 6px; background: rgba(88,166,255,0.18); color: var(--accent);
+    padding: 2px 6px; border-radius: 99px; font-size: 10px;
+  }
+  .char-card .add-card {
+    border-style: dashed; display: flex; align-items: center; justify-content: center;
+    color: var(--fg-3); min-height: 180px;
+  }
+  .char-card .add-card:hover { color: var(--accent); border-color: var(--accent); }
+
+  /* ===== Row 2: Shots table ===== */
+  .shots-wrap { background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r); }
+  .shots-toolbar { display: flex; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); align-items: center; }
+  .shots-toolbar .hint { color: var(--fg-3); font-size: 11px; }
+  table.shots { width: 100%; border-collapse: collapse; }
+  table.shots th, table.shots td {
+    padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top;
+  }
+  table.shots th { color: var(--fg-3); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; background: var(--bg-3); }
+  table.shots tr.selected td { background: rgba(88,166,255,0.08); }
+  table.shots .idx { color: var(--fg-3); font-variant-numeric: tabular-nums; width: 36px; }
+  table.shots .times { width: 130px; font-variant-numeric: tabular-nums; }
+  table.shots .times input { width: 56px; }
+  table.shots .cast { width: 200px; }
+  table.shots .desc input.shot-desc { width: 100%; }
+  table.shots .notes input { width: 100%; }
+  table.shots input, table.shots select {
+    background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 4px 6px; font-size: 12px;
+  }
+  table.shots input:focus, table.shots select:focus { outline: none; border-color: var(--accent); }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: var(--bg-3); border: 1px solid var(--line); border-radius: 99px;
+    padding: 2px 4px 2px 8px; margin: 2px 4px 2px 0; font-size: 11px;
+  }
+  .chip .x {
+    cursor: pointer; color: var(--fg-3); padding: 0 4px; border-radius: 99px; font-weight: 700;
+  }
+  .chip .x:hover { color: var(--err); background: rgba(248,81,73,0.15); }
+  .row-actions { display: flex; gap: 4px; }
+  .row-actions button {
+    background: transparent; color: var(--fg-3); border: 1px solid var(--line); padding: 3px 6px;
+    border-radius: var(--r); font-size: 11px; cursor: pointer;
+  }
+  .row-actions button:hover { color: var(--fg); border-color: var(--line-2); }
+  .row-actions button.del:hover { color: var(--err); border-color: var(--err); }
+  table.shots .ver-cell { color: var(--accent-2); font-size: 11px; font-variant-numeric: tabular-nums; width: 50px; }
+
+  /* ===== Row 3: Export bar ===== */
+  .export-bar {
+    display: flex; gap: 10px; align-items: center; padding: 12px 0; flex-wrap: wrap;
+  }
+  .export-bar button.primary {
+    background: var(--accent-2); color: #0d1117; border: none; padding: 10px 18px;
+    border-radius: var(--r); font-weight: 700; cursor: pointer; font-size: 13px;
+  }
+  .export-bar button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .export-bar .status { color: var(--fg-3); font-size: 12px; }
+  .export-list {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r);
+    max-height: 200px; overflow-y: auto; padding: 6px;
+  }
+  .export-list .row { padding: 6px 10px; display: flex; gap: 10px; align-items: center; font-size: 12px; border-bottom: 1px solid var(--line); }
+  .export-list .row:last-child { border-bottom: none; }
+  .export-list .row .meta { color: var(--fg-3); }
+  .export-list .row .ok { color: var(--accent-2); }
+  .export-list .row .warn { color: var(--warn); }
+  .export-list .row .err { color: var(--err); }
+  .export-list a { color: var(--accent); text-decoration: none; }
+  .export-list a:hover { text-decoration: underline; }
+
+  /* ===== Modal: 3-view editor ===== */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.65); z-index: 100;
+    display: none; align-items: center; justify-content: center;
+  }
+  .modal-bg.open { display: flex; }
+  .modal {
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px;
+    width: min(960px, 96vw); max-height: 90vh; overflow-y: auto; padding: 18px;
+  }
+  .modal h3 { margin: 0 0 12px 0; font-size: 16px; }
+  .modal .sub { color: var(--fg-3); font-size: 12px; margin-bottom: 14px; }
+  .view-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 12px; }
+  .view-slot {
+    background: var(--bg); border: 1px solid var(--line); border-radius: var(--r); padding: 10px;
+  }
+  .view-slot h4 { margin: 0 0 8px 0; font-size: 12px; color: var(--fg-3); }
+  .view-slot .preview {
+    width: 100%; aspect-ratio: 1/1; background: var(--bg-3); border-radius: var(--r);
+    display: flex; align-items: center; justify-content: center; overflow: hidden;
+    color: var(--fg-3); font-size: 12px; margin-bottom: 8px;
+  }
+  .view-slot .preview img { width: 100%; height: 100%; object-fit: cover; }
+  .view-slot textarea {
+    width: 100%; background: var(--bg-3); color: var(--fg); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 6px; font: inherit; resize: vertical; min-height: 60px;
+  }
+  .view-slot .src-row { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+  .view-slot .src-row button {
+    background: var(--bg-3); color: var(--fg); border: 1px solid var(--line); padding: 5px 10px;
+    border-radius: var(--r); cursor: pointer; font-size: 11px;
+  }
+  .view-slot .src-row button:hover { border-color: var(--accent); }
+  .versions-strip { display: flex; gap: 8px; overflow-x: auto; padding: 8px 0; }
+  .ver-card {
+    flex: 0 0 110px; background: var(--bg); border: 1px solid var(--line);
+    border-radius: var(--r); padding: 6px; cursor: pointer;
+  }
+  .ver-card.current { border-color: var(--accent-2); box-shadow: 0 0 0 2px rgba(126,231,135,0.2); }
+  .ver-card .preview {
+    width: 100%; aspect-ratio: 1/1; background: var(--bg-3); border-radius: var(--r);
+    display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;
+    color: var(--fg-3); font-size: 10px;
+  }
+  .ver-card .preview img { width: 100%; height: 100%; object-fit: cover; }
+  .ver-card .ver-no { color: var(--accent-2); font-size: 11px; font-weight: 600; }
+  .ver-card .ver-meta { color: var(--fg-3); font-size: 10px; }
+  .modal .footer { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  .modal .footer button { padding: 8px 14px; border-radius: var(--r); border: 1px solid var(--line); background: var(--bg-3); color: var(--fg); cursor: pointer; }
+  .modal .footer button.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .modal .footer button.danger { color: var(--err); border-color: var(--err); }
+
+  /* ===== Picker modal (OBS / upload) ===== */
+  .picker-list {
+    max-height: 360px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r);
+    background: var(--bg); padding: 6px; margin-top: 10px;
+  }
+  .picker-list .item {
+    padding: 6px 8px; border-bottom: 1px solid var(--line); cursor: pointer; font-size: 12px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .picker-list .item:hover { background: var(--bg-3); }
+  .picker-list .item .thumb { width: 36px; height: 36px; border-radius: 4px; background: var(--bg-3); overflow: hidden; flex-shrink: 0; }
+  .picker-list .item .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .picker-list .empty { padding: 24px; text-align: center; color: var(--fg-3); font-size: 12px; }
+
+  /* ===== Toast ===== */
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 10px 16px; font-size: 13px; z-index: 200; opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .toast.show { opacity: 1; }
+  .toast.ok { border-color: var(--accent-2); }
+  .toast.err { border-color: var(--err); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>分镜本 · Storyboard</h1>
+  <span class="meta" id="meta"></span>
+  <span class="spacer"></span>
+  <button onclick="openObsSettings()">OBS 设置</button>
+  <button onclick="reloadState()">刷新</button>
+  <button class="primary" onclick="document.getElementById('exportPdf').click()">导出 PDF</button>
+</header>
+
+<!-- ===== Row 1: library ===== -->
+<section id="libSection">
+  <h2>素材库 · Library（人物 / 动物 / 卡通 / 物品 — 单击选中，双击编辑）</h2>
+  <div class="lib-toolbar">
+    <input id="libFilter" placeholder="按名字/标签过滤…" oninput="renderLibStrip()" />
+    <select id="libKind" onchange="renderLibStrip()">
+      <option value="all">全部类型</option>
+      <option value="character">人物 / 动物 / 卡通</option>
+      <option value="scene">场景</option>
+      <option value="prop">道具 / 物品</option>
+    </select>
+    <input id="newName" placeholder="新素材名" />
+    <select id="newKind">
+      <option value="character">人物</option>
+      <option value="scene">场景</option>
+      <option value="prop">道具</option>
+    </select>
+    <input id="newTheme" placeholder="主题 (可选)" style="min-width:160px" />
+    <button onclick="addItem()">+ 添加素材</button>
+  </div>
+  <div class="lib-strip" id="libStrip"></div>
+</section>
+
+<!-- ===== Row 2: shots ===== -->
+<section>
+  <h2>镜头 · Shots（点击最上面素材卡可加入当前行）</h2>
+  <div class="shots-wrap">
+    <div class="shots-toolbar">
+      <button onclick="addShot()">+ 新增镜头</button>
+      <span class="hint" id="shotHint">未选中镜头。点击表中任意一行来选中，然后点击上方素材卡加入。</span>
+    </div>
+    <table class="shots" id="shotsTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>时间</th>
+          <th>人物形象</th>
+          <th>场景</th>
+          <th>道具</th>
+          <th>文本描述</th>
+          <th>备注</th>
+          <th>v</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="shotsTbody"></tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== Row 3: export ===== -->
+<section>
+  <h2>导出 · Export</h2>
+  <div class="export-bar">
+    <input id="exportTitle" placeholder="标题（默认自动）" />
+    <button class="primary" id="exportPdf" onclick="exportPdf()">导出 PDF 并上传 OBS</button>
+    <span class="status" id="exportStatus"></span>
+  </div>
+  <div class="export-list" id="exportList"><div class="meta" style="padding:10px;">尚无导出记录</div></div>
+</section>
+
+<!-- ===== Modal: editor (3 views) ===== -->
+<div class="modal-bg" id="editorModal">
+  <div class="modal">
+    <h3 id="editorTitle">编辑素材</h3>
+    <div class="sub" id="editorSub"></div>
+
+    <div class="versions-strip" id="versionsStrip"></div>
+
+    <div style="margin: 14px 0 8px 0; color: var(--fg-3); font-size: 12px;">从版本库中挑选基础 → 在三视图里补充或替换 → 提交改进意见生成下一版</div>
+
+    <div class="view-grid" id="viewGrid">
+      <div class="view-slot" data-view="front">
+        <h4>正视图 · front</h4>
+        <div class="src-row">
+          <button onclick="openUploadPicker('front')">📁 上传</button>
+          <button onclick="openObsPicker('front')">☁️ OBS 列表</button>
+          <button onclick="autoRender('front')">🎲 自动生成</button>
+          <button onclick="clearSource('front')" style="margin-left:auto;color:var(--fg-3)">× 清空</button>
+        </div>
+        <div class="preview" data-preview="front">未设置</div>
+        <textarea data-feedback="front" placeholder="改进意见（如：把帽檐压低、眼睛放大、改成侧光…）"></textarea>
+      </div>
+      <div class="view-slot" data-view="side">
+        <h4>侧视图 · side</h4>
+        <div class="src-row">
+          <button onclick="openUploadPicker('side')">📁 上传</button>
+          <button onclick="openObsPicker('side')">☁️ OBS 列表</button>
+          <button onclick="autoRender('side')">🎲 自动生成</button>
+          <button onclick="clearSource('side')" style="margin-left:auto;color:var(--fg-3)">× 清空</button>
+        </div>
+        <div class="preview" data-preview="side">未设置</div>
+        <textarea data-feedback="side" placeholder="改进意见…"></textarea>
+      </div>
+      <div class="view-slot" data-view="back">
+        <h4>背视图 · back</h4>
+        <div class="src-row">
+          <button onclick="openUploadPicker('back')">📁 上传</button>
+          <button onclick="openObsPicker('back')">☁️ OBS 列表</button>
+          <button onclick="autoRender('back')">🎲 自动生成</button>
+          <button onclick="clearSource('back')" style="margin-left:auto;color:var(--fg-3)">× 清空</button>
+        </div>
+        <div class="preview" data-preview="back">未设置</div>
+        <textarea data-feedback="back" placeholder="改进意见…"></textarea>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+      <input id="promptInput" placeholder="提示词（可选，自动生成时作为 base prompt）" style="flex:1;background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;" />
+    </div>
+
+    <div class="footer">
+      <button class="danger" onclick="deleteCurrentItem()">删除素材</button>
+      <span style="flex:1"></span>
+      <button onclick="closeEditor()">取消</button>
+      <button class="primary" onclick="submitNewVersion()">保存为新版本</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal: picker ===== -->
+<div class="modal-bg" id="pickerModal">
+  <div class="modal">
+    <h3 id="pickerTitle">选择图片</h3>
+    <div class="sub" id="pickerSub"></div>
+    <div id="pickerUploadRow" style="display:none;margin-bottom:8px;">
+      <input type="file" id="pickerFile" accept="image/*" />
+    </div>
+    <div class="picker-list" id="pickerList"></div>
+    <div class="footer">
+      <button onclick="closePicker()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Modal: OBS settings ===== -->
+<div class="modal-bg" id="obsModal">
+  <div class="modal">
+    <h3>OBS 设置</h3>
+    <div class="sub">填好之后导出 PDF 会自动上传到此 OBS（endpoint 形如 http://host.docker.internal:8080）</div>
+    <div style="display:grid;gap:10px;">
+      <label>Endpoint <input id="obsEndpoint" placeholder="http://host.docker.internal:8080" style="width:100%;background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;" /></label>
+      <label>Bucket <input id="obsBucket" style="width:100%;background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;" /></label>
+      <label>API Key (可选) <input id="obsApiKey" style="width:100%;background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;" /></label>
+      <label>PDF Footer <input id="pdfFooter" style="width:100%;background:var(--bg-3);color:var(--fg);border:1px solid var(--line);border-radius:var(--r);padding:6px 10px;" /></label>
+    </div>
+    <div class="footer">
+      <button onclick="closeObsSettings()">取消</button>
+      <button class="primary" onclick="saveObsSettings()">保存</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ====== state ====== */
+let STATE = { items: [], versions: [], shots: [], config: {}, kinds: ['character','scene','prop'] };
+let SELECTED_ITEM_ID = null;
+let SELECTED_SHOT_ID = null;
+let EDITING_ITEM_ID = null;
+let PICKER_TARGET = null; // 'upload' | 'obs' | 'render'
+let PICKER_VIEW = null;   // 'front' | 'side' | 'back'
+let PICKER_CALLBACK = null;
+
+/* ====== utils ====== */
+function toast(msg, kind) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show ' + (kind || '');
+  setTimeout(() => { el.className = 'toast'; }, 2500);
+}
+async function api(method, path, body, isForm) {
+  const opts = { method, headers: {} };
+  if (body && !isForm) {
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(body);
+  } else if (body && isForm) {
+    opts.body = body;
+  }
+  const r = await fetch(path, opts);
+  let j = null;
+  try { j = await r.json(); } catch (_) {}
+  if (!r.ok) {
+    const err = (j && j.error) || `${method} ${path} → ${r.status}`;
+    toast(err, 'err');
+    throw new Error(err);
+  }
+  return j;
+}
+
+/* ====== bootstrap ====== */
+async function reloadState() {
+  const j = await api('GET', '/api/storyboard/state');
+  STATE = j;
+  renderAll();
+  document.getElementById('meta').textContent =
+    `素材 ${j.items.length} 个 · 版本 ${j.versions.length} 个 · 镜头 ${j.shots.length} 条 · OBS ${j.config.obsEndpoint ? '已配置' : '未配置'}`;
+}
+
+function renderAll() {
+  renderLibStrip();
+  renderShots();
+  renderExports();
+}
+
+function renderLibStrip() {
+  const strip = document.getElementById('libStrip');
+  const filter = (document.getElementById('libFilter').value || '').toLowerCase();
+  const kindFilter = document.getElementById('libKind').value;
+  strip.innerHTML = '';
+  const items = STATE.items
+    .filter((x) => kindFilter === 'all' || x.kind === kindFilter)
+    .filter((x) => !filter || x.name.toLowerCase().includes(filter) || (x.tags || []).some((t) => t.toLowerCase().includes(filter)));
+  if (!items.length) {
+    const empty = document.createElement('div');
+    empty.className = 'meta';
+    empty.style.padding = '20px';
+    empty.textContent = '还没有素材。点下方"+ 添加素材"建第一个，或者从已有镜头里抽取出共性人物 / 场景 / 道具。';
+    strip.appendChild(empty);
+  }
+  for (const it of items) {
+    const card = document.createElement('div');
+    card.className = 'char-card' + (SELECTED_ITEM_ID === it.id ? ' selected' : '');
+    const cur = it.currentVersionId ? STATE.versions.find((v) => v.id === it.currentVersionId) : null;
+    const portraitUrl = cur ? portraitUrlOf(cur) : null;
+    card.innerHTML = `
+      <span class="kind-badge">${kindLabel(it.kind)}</span>
+      ${it.currentVersionId ? `<span class="ver-badge">v${cur.versionNo}</span>` : ''}
+      <div class="portrait">${portraitUrl ? `<img src="${portraitUrl}" alt="" />` : placeholderEmoji(it.kind)}</div>
+      <div class="name">${escapeHtml(it.name)}</div>
+      <div class="row2"><span>${escapeHtml(it.theme || it.kind)}</span><span>${it.versionCount || 0} 版</span></div>
+    `;
+    card.onclick = () => {
+      SELECTED_ITEM_ID = it.id;
+      renderLibStrip();
+      // If a shot is selected, attach current version to it.
+      if (SELECTED_SHOT_ID && it.currentVersionId) attachVersionToSelectedShot(it, it.currentVersionId);
+    };
+    card.ondblclick = () => openEditor(it.id);
+    strip.appendChild(card);
+  }
+  // Always-rendered "add" card at the end as a fallback UI.
+  const addCard = document.createElement('div');
+  addCard.className = 'char-card add-card';
+  addCard.innerHTML = '<div>+ 新建</div>';
+  addCard.onclick = () => document.getElementById('newName').focus();
+  // strip.appendChild(addCard); // not needed if lib toolbar already has "+ 添加素材"
+}
+
+function portraitUrlOf(version) {
+  if (!version) return null;
+  const s = version.sources || {};
+  for (const k of ['front', 'side', 'back']) {
+    if (s[k] && s[k].url) return s[k].url;
+  }
+  return null;
+}
+function placeholderEmoji(kind) {
+  if (kind === 'character') return '🧑';
+  if (kind === 'scene') return '🏞️';
+  if (kind === 'prop') return '🎁';
+  return '·';
+}
+function kindLabel(k) {
+  if (k === 'character') return '人物';
+  if (k === 'scene') return '场景';
+  if (k === 'prop') return '道具';
+  return k;
+}
+function escapeHtml(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+/* ====== shots ====== */
+function renderShots() {
+  const tbody = document.getElementById('shotsTbody');
+  tbody.innerHTML = '';
+  for (const shot of STATE.shots) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = shot.id;
+    if (SELECTED_SHOT_ID === shot.id) tr.classList.add('selected');
+    tr.onclick = () => { SELECTED_SHOT_ID = shot.id; document.getElementById('shotHint').textContent = '已选中镜头 #' + shot.index + ' · 点击上方素材可加入此行'; renderShots(); };
+    tr.innerHTML = `
+      <td class="idx">${shot.index}</td>
+      <td class="times">
+        <input value="${escapeHtml(shot.tIn)}" onchange="patchShot('${shot.id}',{tIn:this.value})" />
+        →
+        <input value="${escapeHtml(shot.tOut)}" onchange="patchShot('${shot.id}',{tOut:this.value})" />
+      </td>
+      <td class="cast">${slotChipsHtml(shot, 'castVersionIds')}</td>
+      <td class="cast">${slotChipsHtml(shot, 'sceneVersionIds')}</td>
+      <td class="cast">${slotChipsHtml(shot, 'propVersionIds')}</td>
+      <td class="desc"><input class="shot-desc" value="${escapeHtml(shot.description)}" onchange="patchShot('${shot.id}',{description:this.value})" /></td>
+      <td class="notes"><input value="${escapeHtml(shot.notes)}" onchange="patchShot('${shot.id}',{notes:this.value})" /></td>
+      <td class="ver-cell">v${shot.versionNo}</td>
+      <td class="row-actions">
+        <button onclick="moveShot('${shot.id}', -1)">↑</button>
+        <button onclick="moveShot('${shot.id}', 1)">↓</button>
+        <button class="del" onclick="delShot('${shot.id}')">×</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+  if (!STATE.shots.length) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="9" style="color:var(--fg-3);padding:24px;text-align:center;">还没有镜头。点 "+ 新增镜头" 开始。</td>`;
+    tbody.appendChild(tr);
+  }
+}
+function slotChipsHtml(shot, key) {
+  const ids = shot[key] || [];
+  if (!ids.length) return '<span style="color:var(--fg-3);font-size:11px;">—</span>';
+  return ids.map((vid) => {
+    const v = STATE.versions.find((x) => x.id === vid);
+    const it = v ? STATE.items.find((x) => x.id === v.itemId) : null;
+    if (!v || !it) return '';
+    const slot = key === 'castVersionIds' ? 'cast' : (key === 'sceneVersionIds' ? 'scene' : 'prop');
+    return `<span class="chip">${escapeHtml(it.name)} v${v.versionNo}<span class="x" onclick="event.stopPropagation();removeFromShot('${shot.id}','${vid}','${slot}')">×</span></span>`;
+  }).join('');
+}
+async function patchShot(id, body) {
+  const j = await api('PATCH', '/api/storyboard/shots/' + id, body);
+  const i = STATE.shots.findIndex((x) => x.id === id);
+  if (i >= 0) STATE.shots[i] = j.shot;
+  renderShots();
+}
+async function addShot() {
+  const j = await api('POST', '/api/storyboard/shots', { tIn: '00:00', tOut: '00:05', description: '新镜头', notes: '' });
+  STATE.shots.push(j.shot);
+  SELECTED_SHOT_ID = j.shot.id;
+  renderShots();
+  document.getElementById('shotHint').textContent = '已选中镜头 #' + j.shot.index;
+}
+async function delShot(id) {
+  if (!confirm('删除这个镜头？')) return;
+  await api('DELETE', '/api/storyboard/shots/' + id);
+  STATE.shots = STATE.shots.filter((x) => x.id !== id);
+  if (SELECTED_SHOT_ID === id) SELECTED_SHOT_ID = null;
+  renderShots();
+}
+async function moveShot(id, delta) {
+  const sorted = [...STATE.shots].sort((a,b) => (a.index||0) - (b.index||0));
+  const i = sorted.findIndex((s) => s.id === id);
+  const j = i + delta;
+  if (i < 0 || j < 0 || j >= sorted.length) return;
+  [sorted[i], sorted[j]] = [sorted[j], sorted[i]];
+  const orderedIds = sorted.map((s) => s.id);
+  const r = await api('POST', '/api/storyboard/shots/reorder', { orderedIds });
+  STATE.shots = r.shots;
+  renderShots();
+}
+async function attachVersionToSelectedShot(item, versionId) {
+  if (!SELECTED_SHOT_ID) {
+    toast('先在镜头表里选中一行', 'err');
+    return;
+  }
+  const slot = item.kind === 'scene' ? 'scene' : (item.kind === 'prop' ? 'prop' : 'cast');
+  const j = await api('POST', `/api/storyboard/shots/${SELECTED_SHOT_ID}/add`, { versionId, slot });
+  const i = STATE.shots.findIndex((x) => x.id === SELECTED_SHOT_ID);
+  if (i >= 0) STATE.shots[i] = j.shot;
+  renderShots();
+}
+async function removeFromShot(shotId, versionId, slot) {
+  const j = await api('POST', `/api/storyboard/shots/${shotId}/remove`, { versionId, slot });
+  const i = STATE.shots.findIndex((x) => x.id === shotId);
+  if (i >= 0) STATE.shots[i] = j.shot;
+  renderShots();
+}
+
+/* ====== items ====== */
+async function addItem() {
+  const name = document.getElementById('newName').value.trim();
+  const kind = document.getElementById('newKind').value;
+  const theme = document.getElementById('newTheme').value.trim();
+  if (!name) { toast('请输入素材名', 'err'); return; }
+  const j = await api('POST', '/api/storyboard/items', { name, kind, theme });
+  STATE.items.push(j.item);
+  document.getElementById('newName').value = '';
+  document.getElementById('newTheme').value = '';
+  renderLibStrip();
+  // Immediately open editor so master can set the v1.
+  openEditor(j.item.id);
+}
+
+/* ====== editor (3 views + versions) ====== */
+function openEditor(itemId) {
+  EDITING_ITEM_ID = itemId;
+  const item = STATE.items.find((x) => x.id === itemId);
+  if (!item) return;
+  document.getElementById('editorTitle').textContent = `编辑 · ${item.name} (${kindLabel(item.kind)})`;
+  document.getElementById('editorSub').textContent = `主题：${item.theme || '—'} · 创建于 ${item.createdAt}`;
+  renderVersionsStrip(itemId);
+  // Reset view slots
+  for (const v of ['front', 'side', 'back']) {
+    setViewPreview(v, null, '');
+    document.querySelector(`textarea[data-feedback="${v}"]`).value = '';
+  }
+  document.getElementById('promptInput').value = item.theme || item.name;
+  document.getElementById('editorModal').classList.add('open');
+}
+function closeEditor() {
+  document.getElementById('editorModal').classList.remove('open');
+  EDITING_ITEM_ID = null;
+}
+function renderVersionsStrip(itemId) {
+  const strip = document.getElementById('versionsStrip');
+  strip.innerHTML = '';
+  const versions = STATE.versions.filter((v) => v.itemId === itemId).sort((a, b) => a.versionNo - b.versionNo);
+  const item = STATE.items.find((x) => x.id === itemId);
+  for (const v of versions) {
+    const url = portraitUrlOf(v);
+    const c = document.createElement('div');
+    c.className = 'ver-card' + (item.currentVersionId === v.id ? ' current' : '');
+    c.innerHTML = `
+      <div class="preview">${url ? `<img src="${url}" />` : '·'}</div>
+      <div class="ver-no">v${v.versionNo}</div>
+      <div class="ver-meta">${escapeHtml((v.feedback || '').slice(0, 30))}</div>
+    `;
+    c.onclick = () => loadVersionIntoEditor(v);
+    c.ondblclick = () => api('POST', `/api/storyboard/items/${itemId}/set-current`, { versionId: v.id }).then((r) => {
+      const i = STATE.items.findIndex((x) => x.id === itemId);
+      if (i >= 0) STATE.items[i] = r.item;
+      toast(`已切到 v${v.versionNo}，${v.versionNo < versions.length ? '更晚的版本已丢弃' : ''}`, 'ok');
+      renderVersionsStrip(itemId);
+      renderLibStrip();
+    });
+    strip.appendChild(c);
+  }
+  if (!versions.length) {
+    const empty = document.createElement('div');
+    empty.style.color = 'var(--fg-3)';
+    empty.style.fontSize = '12px';
+    empty.style.padding = '10px';
+    empty.textContent = '还没有版本。填好下方三视图和改进意见后点"保存为新版本"。';
+    strip.appendChild(empty);
+  }
+}
+function loadVersionIntoEditor(v) {
+  for (const k of ['front', 'side', 'back']) {
+    const src = (v.sources || {})[k];
+    setViewPreview(k, src ? src.url : null, '');
+    document.querySelector(`textarea[data-feedback="${k}"]`).value = '';
+  }
+}
+function setViewPreview(view, url, note) {
+  const el = document.querySelector(`[data-preview="${view}"]`);
+  if (!el) return;
+  if (url) {
+    el.innerHTML = `<img src="${url}" alt="" />`;
+  } else {
+    el.innerHTML = '未设置';
+  }
+  el.dataset.note = note || '';
+}
+function clearSource(view) {
+  setViewPreview(view, null, '');
+  toast(`已清空 ${view} 视图源`, 'ok');
+}
+async function deleteCurrentItem() {
+  if (!EDITING_ITEM_ID) return;
+  if (!confirm('删除这个素材？相关版本也会被删除。')) return;
+  await api('DELETE', '/api/storyboard/items/' + EDITING_ITEM_ID);
+  STATE.items = STATE.items.filter((x) => x.id !== EDITING_ITEM_ID);
+  STATE.versions = STATE.versions.filter((v) => v.itemId !== EDITING_ITEM_ID);
+  closeEditor();
+  renderLibStrip();
+  toast('已删除', 'ok');
+}
+async function submitNewVersion() {
+  if (!EDITING_ITEM_ID) return;
+  const item = STATE.items.find((x) => x.id === EDITING_ITEM_ID);
+  const sources = {};
+  const feedback = {};
+  for (const v of ['front', 'side', 'back']) {
+    const preview = document.querySelector(`[data-preview="${v}"]`);
+    const img = preview.querySelector('img');
+    const fb = document.querySelector(`textarea[data-feedback="${v}"]`).value;
+    feedback[v] = fb;
+    if (img) sources[v] = { kind: 'upload', url: img.src }; // URL-only; backend will keep current
+  }
+  const joinedFeedback = ['front','side','back']
+    .filter((v) => feedback[v] && feedback[v].trim())
+    .map((v) => `[${v}] ${feedback[v].trim()}`)
+    .join('\n');
+  const prompt = document.getElementById('promptInput').value;
+  const parentVersionId = item.currentVersionId;
+  const j = await api('POST', `/api/storyboard/items/${EDITING_ITEM_ID}/versions`, {
+    parentVersionId, feedback: joinedFeedback, sources, prompt, createdBy: 'master',
+  });
+  if (!j.ok) { toast(j.error || '保存失败', 'err'); return; }
+  // Update state
+  STATE.versions.push(j.version);
+  const i = STATE.items.findIndex((x) => x.id === EDITING_ITEM_ID);
+  if (i >= 0) STATE.items[i] = j.item;
+  toast(`已生成 v${j.version.versionNo}`, 'ok');
+  renderVersionsStrip(EDITING_ITEM_ID);
+  renderLibStrip();
+}
+
+/* ====== picker modal ====== */
+function openUploadPicker(view) {
+  PICKER_TARGET = 'upload';
+  PICKER_VIEW = view;
+  PICKER_CALLBACK = (result) => setViewPreview(view, result.url, '');
+  document.getElementById('pickerTitle').textContent = `上传图片 → ${view}`;
+  document.getElementById('pickerSub').textContent = '支持 png/jpg/webp/gif/svg（≤20MB）';
+  document.getElementById('pickerUploadRow').style.display = 'block';
+  document.getElementById('pickerFile').value = '';
+  document.getElementById('pickerList').innerHTML = '';
+  document.getElementById('pickerModal').classList.add('open');
+}
+function openObsPicker(view) {
+  PICKER_TARGET = 'obs';
+  PICKER_VIEW = view;
+  PICKER_CALLBACK = (result) => setViewPreview(view, result.url, `obs:${result.obsKey}`);
+  document.getElementById('pickerTitle').textContent = `从 OBS 选图 → ${view}`;
+  document.getElementById('pickerSub').textContent = STATE.config.obsEndpoint ? `OBS: ${STATE.config.obsEndpoint}` : 'OBS 未配置，请先在头部" OBS 设置"里配置';
+  document.getElementById('pickerUploadRow').style.display = 'none';
+  document.getElementById('pickerModal').classList.add('open');
+  refreshObsList();
+}
+function closePicker() {
+  document.getElementById('pickerModal').classList.remove('open');
+  PICKER_CALLBACK = null;
+  PICKER_VIEW = null;
+}
+async function refreshObsList() {
+  const list = document.getElementById('pickerList');
+  list.innerHTML = '<div class="empty">正在加载…</div>';
+  const j = await api('GET', '/api/storyboard/obs/list?prefix=characters/');
+  if (!j.ok) {
+    list.innerHTML = `<div class="empty">${escapeHtml(j.error || 'OBS 不可用')}<br><br>提示：在头部" OBS 设置"里填写 endpoint，例如 <code>http://host.docker.internal:8080</code></div>`;
+    return;
+  }
+  const items = (j.items || []).filter((x) => /\.(png|jpe?g|webp|gif|svg)$/i.test(x.key || x.name || x.url || ''));
+  if (!items.length) {
+    list.innerHTML = '<div class="empty">OBS 里没找到图片。试试换个 prefix，或者先用"📁 上传"再考虑 OBS。</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const it of items) {
+    const key = it.key || it.name;
+    const url = it.url || `/api/storyboard/obs/fetch?key=${encodeURIComponent(key)}`;
+    const row = document.createElement('div');
+    row.className = 'item';
+    row.innerHTML = `<div class="thumb"><img src="${escapeHtml(url)}" onerror="this.parentNode.textContent='×'" /></div><div>${escapeHtml(key)}</div>`;
+    row.onclick = async () => {
+      // Server-side fetch to mirror locally so the URL works even if OBS is offline later.
+      const r = await api('POST', '/api/storyboard/obs/fetch', { obsKey: key });
+      if (r.ok) {
+        if (PICKER_CALLBACK) PICKER_CALLBACK({ url: r.url, obsKey: key });
+        closePicker();
+      } else {
+        toast(r.error || '下载失败', 'err');
+      }
+    };
+    list.appendChild(row);
+  }
+}
+document.addEventListener('change', async (e) => {
+  if (e.target && e.target.id === 'pickerFile') {
+    const f = e.target.files[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('file', f);
+    const r = await fetch('/api/storyboard/upload', { method: 'POST', body: fd });
+    const j = await r.json();
+    if (!r.ok || !j.ok) { toast(j.error || '上传失败', 'err'); return; }
+    if (PICKER_CALLBACK) PICKER_CALLBACK(j);
+    closePicker();
+  }
+});
+async function autoRender(view) {
+  if (!EDITING_ITEM_ID) return;
+  const item = STATE.items.find((x) => x.id === EDITING_ITEM_ID);
+  const feedback = document.querySelector(`textarea[data-feedback="${view}"]`).value;
+  const base = document.getElementById('promptInput').value;
+  if (!base && !feedback) { toast('请先填提示词或改进意见', 'err'); return; }
+  const prompt = `${item.name}, ${item.theme || ''}, ${view} view, ${feedback || base}`.trim();
+  toast('正在调用 fal.ai 生成 ' + view + '…');
+  const j = await api('POST', '/api/storyboard/auto-render', { prompt, size: 'square_hd' });
+  if (!j.ok) { toast(j.error || '生成失败', 'err'); return; }
+  if (j.url) {
+    setViewPreview(view, j.url, 'auto');
+    toast('已生成 ' + view, 'ok');
+  } else if (j.sourceUrl) {
+    setViewPreview(view, j.sourceUrl, 'auto-remote');
+    toast('已生成（远程） ' + view, 'ok');
+  }
+}
+
+/* ====== OBS settings ====== */
+function openObsSettings() {
+  document.getElementById('obsEndpoint').value = STATE.config.obsEndpoint || '';
+  document.getElementById('obsBucket').value = STATE.config.obsBucket || '';
+  document.getElementById('obsApiKey').value = STATE.config.obsApiKey || '';
+  document.getElementById('pdfFooter').value = STATE.config.pdfFooter || '';
+  document.getElementById('obsModal').classList.add('open');
+}
+function closeObsSettings() { document.getElementById('obsModal').classList.remove('open'); }
+async function saveObsSettings() {
+  const cfg = {
+    obsEndpoint: document.getElementById('obsEndpoint').value.trim(),
+    obsBucket: document.getElementById('obsBucket').value.trim() || 'hermit-claw',
+    obsApiKey: document.getElementById('obsApiKey').value.trim(),
+    pdfFooter: document.getElementById('pdfFooter').value.trim() || 'Hermit-Claw · storyboard',
+  };
+  const j = await api('POST', '/api/storyboard/config', cfg);
+  STATE.config = j.config;
+  closeObsSettings();
+  toast('OBS 设置已保存', 'ok');
+  reloadState();
+}
+
+/* ====== export ====== */
+async function exportPdf() {
+  const btn = document.getElementById('exportPdf');
+  btn.disabled = true;
+  document.getElementById('exportStatus').textContent = '正在渲染 PDF…';
+  try {
+    const title = document.getElementById('exportTitle').value.trim();
+    const j = await api('POST', '/api/storyboard/export-pdf', { title });
+    if (j.ok) {
+      const f = j.file;
+      document.getElementById('exportStatus').textContent =
+        f.status === 'uploaded' ? `已上传 OBS：${f.obsKey}` : `本地已保存：${f.localPath}（OBS 未配置）`;
+      toast('PDF 已生成', 'ok');
+      reloadState();
+    } else {
+      document.getElementById('exportStatus').textContent = '导出失败';
+      toast(j.error || '导出失败', 'err');
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+function renderExports() {
+  const list = document.getElementById('exportList');
+  const exports = (STATE.config && STATE.config.exports) || [];
+  if (!exports.length) {
+    list.innerHTML = '<div class="meta" style="padding:10px;">尚无导出记录</div>';
+    return;
+  }
+  list.innerHTML = '';
+  for (const e of exports) {
+    const fname = e.localPath.split('/').pop();
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.innerHTML = `
+      <span class="${e.status === 'uploaded' ? 'ok' : 'warn'}">●</span>
+      <span>${escapeHtml(fname)}</span>
+      <span class="meta">${escapeHtml(e.at)}</span>
+      <span class="meta">${(e.bytes / 1024).toFixed(1)} KB</span>
+      <span class="meta">${e.status === 'uploaded' ? escapeHtml(e.obsKey) : escapeHtml(e.error || 'local')}</span>
+      <a href="/api/storyboard/exports/${encodeURIComponent(fname)}" download>下载</a>
+    `;
+    list.appendChild(row);
+  }
+}
+
+/* ====== boot ====== */
+reloadState();
+setInterval(reloadState, 30000);
+</script>
+</body>
+</html>

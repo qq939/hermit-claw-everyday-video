@@ -17,10 +17,16 @@
 | `./18089-everydayVideo/lib/skill-ui.html` | 交互式技能配置页面 |
 | `./18089-everydayVideo/lib/comm-manager.js` | 通信管理核心模块 |
 | `./18089-everydayVideo/lib/console.html` | Agent 控制台（对外交流页面） |
+| `./18089-everydayVideo/lib/storyboard/` | 分镜本子系统（lib.js / mount.js / pdf.js / font-loader.js / storyboard.html / console-tab.js） |
+| `./18089-everydayVideo/lib/studio/` | Studio 子系统（fal.ai 角色 + 本地海报/GIF/长文） |
 | `./18089-everydayVideo/config/skills.json` | 技能配置存储文件 |
 | `./18089-everydayVideo/config/comm.json` | 通信配置（邮件/调度/Master 邮箱） |
 | `./18089-everydayVideo/config/messages.json` | 消息板数据 |
 | `./18089-everydayVideo/config/reports.json` | 工作报告数据 |
+| `./18089-everydayVideo/config/storyboard-projects.json` | 分镜本项目列表 |
+| `./18089-everydayVideo/config/storyboard-library.json` | 分镜本素材库（character/scene/prop items） |
+| `./18089-everydayVideo/config/storyboard-library-versions.json` | 分镜本素材版本历史 |
+| `./18089-everydayVideo/config/storyboard-shots.json` | 分镜本镜头列表 |
 | `./systemreadme.md` | 平台惯例，**只读参考** |
 
 ## 二、常用命令
@@ -74,6 +80,26 @@ curl -X POST http://localhost:8082/api/comm/mail-fetch         # 拉取最新收
 curl -X POST http://localhost:8082/api/comm/mail-test \        # 发测试邮件
   -H "Content-Type: application/json" -d '{"to":"master@example.com"}'
 curl -X POST http://localhost:8082/api/comm/run-now            # 手动触发工作流
+
+# 分镜本子系统（第 12-15 轮）
+curl http://localhost:8082/studio/storyboard                     # 分镜本 UI（页面）
+curl http://localhost:8082/api/storyboard/state                  # 当前项目 state（items/versions/shots）
+curl http://localhost:8082/api/storyboard/projects               # 项目列表
+curl -X POST http://localhost:8082/api/storyboard/projects \     # 新建项目
+  -H "Content-Type: application/json" \
+  -d '{"name":"噜噜的天空","slug":"lulu_sky"}'
+curl -X PATCH http://localhost:8082/api/storyboard/projects/<id> # 改名/改 slug
+curl -X DELETE http://localhost:8082/api/storyboard/projects/<id># 级联删除项目下素材/版本/镜头
+curl -X POST http://localhost:8082/api/storyboard/items \        # 新建素材（character/scene/prop）
+  -H "Content-Type: application/json" \
+  -d '{"projectId":"sb-proj-...","kind":"character","name":"噜噜"}'
+curl -X POST http://localhost:8082/api/storyboard/shots \        # 新建镜头
+  -H "Content-Type: application/json" \
+  -d '{"projectId":"sb-proj-...","tIn":"00:00","tOut":"00:05","description":"噜噜趴着"}'
+curl -X POST http://localhost:8082/api/storyboard/export-pdf \   # 导出 PDF → OBS
+  -H "Content-Type: application/json" \
+  -d '{"projectId":"sb-proj-...","title":"噜噜的天空"}'
+curl http://localhost:8082/api/storyboard/exports/<key>          # 下载历史导出 PDF
 ```
 
 ## 三、故障排查（Cheat-sheet）
@@ -102,6 +128,15 @@ curl -X POST http://localhost:8082/api/comm/run-now            # 手动触发工
 | mailport 5030 用错 | `curl -sS http://host.docker.internal:18081/api/tools \| jq .items[1].port` | 应是 18001（18081 知识库登记），不是 5030 |
 | `/api/comm/email-config` 报 missing to | `curl /api/comm/status \| jq .mail` | 配置没保存 `target` 字段 |
 | 控制台邮件面板空白 | `curl http://localhost:8082/api/comm/status` | server.js 没包含新 mail-* 路由（v6 前代码） |
+| `/studio/storyboard` 404 | `curl -sS http://localhost:8082/health` + `grep storyboardMount server.js` | server.js 没引入 storyboard/mount.js（旧版本） |
+| 导出的 PDF 是空白的 | `pdftotext file.pdf -` | PDFDoc 没建 Pages dict / `/Resources` 引用错 / chip 数据模型字段名错 |
+| PDF 中文乱码 / `?ù?QOQULOWLOT` | `pdftotext file.pdf -` | `_cidHex` 没查 `codeToCid`，把 Unicode 码点当 glyph ID 写；必须用 `c2c.get(cp)` 找 glyph ID |
+| 导出 PDF 占满整屏 | 检查 `storyboard.html` 是否删 `#sb-bottom`、是否改为 `#sb-fab`（position:absolute） | 第 14 轮前用 bottom bar 挤掉镜头表 |
+| 分镜本看不到素材 | `cat config/storyboard-projects.json` | 项目已切走；state endpoint 需要 `?projectId=` 过滤 |
+| OBS 文件名乱 (`storyboard/exports/...`) | `curl /api/storyboard/state \| jq .exports[0].obsKey` | 第 13 轮前没走平面命名；新版应为 `<bucket>_<slug>_` |
+| 导出 PDF 上传 401/403 | `curl /api/storyboard/config` 看 `obsEndpoint` | OBS token 过期；endpoint 配错（默认应是 `http://obs.dimond.top`） |
+| 镜头表 chip 删除不掉 | 检查 `storyboard.html` 中 `.chip-remove` 绑定 | 第 12 轮后应绑 `castVersionIds` / `sceneVersionIds` / `propVersionIds`（不是 `characterVersionIds`） |
+| drop-after-promote 没生效 | `cat config/storyboard-library-versions.json \| jq` | 双击「设为当前」走的是 `mount.js` 的 `set-current` 路由，确认入参带 `versionId` |
 
 ## 四、修改代码的注意点
 
@@ -140,6 +175,12 @@ curl -X POST http://localhost:8082/api/comm/run-now            # 手动触发工
 25. **消息板与报告持久化**：`config/messages.json` / `config/reports.json` 单文件落盘，长时间使用建议定期归档，避免单文件过大。
 26. **用户填配置原则**：所有控制台表单提交都走 JSON POST；前端 `fetch` 必须带 `Content-Type: application/json`。
 27. **Legacy 兼容**：`getCommConfig()` 主动丢弃老 `email` / `secretsConfigured` 字段，缺 `mail` 时回填默认结构。即使服务器升级前留下的 `comm.json` 也不会让新代码崩溃。
+28. **PDFDoc 必须建 Pages dict**：`PDFDoc` 构造时要 push catalog + Pages + Helvetica + Helvetica-Bold 占位 object 1/2/3/4。`finalize()` 把 Pages dict 覆盖回 `objects[1]`（page id 2）时，要确保 catalog 指向的是 page id 2。`addPage` 写死 `/F1 3 0 R /F2 4 0 R`，不要让外部传 fontIds（容易错位）。
+29. **CJK PDF 的 `_cidHex` 必须查 `codeToCid`**：Identity-H 的字节是 CFF glyph ID（CID），不是 Unicode 码点。CJK 的 glyph ID 与码点**完全不同**（如 U+565C → gid 0x3263）。`_cidHex` 必须用 `doc._cjk.codeToCid.get(cp)` 查表；缺失 → CID 0（`.notdef`）防止崩溃。
+30. **ToUnicode CMap 的 bfchar 参数顺序**：PDF 规范是 `<srcCID> <dstUnicode>`，CID 在左、Unicode 在右。`<${_hex4(cid)}> <${_hex4(code)}>` 是正确写法；同时 CMap 内的数字串必须用十六进制（`n.toString(16).padStart(4,'0')`），不是十进制字符串。
+31. **多项目隔离**：分镜本的 item / version / shot 全部带 `projectId`。`/api/storyboard/state?projectId=` 必须按项目过滤返回。新建素材 / 镜头 / 导出 PDF 时也要传 `projectId`，否则落到默认项目；`mount.js` 的 `POST /items` 早期漏透传 `projectId` 是已知 bug，已修。
+32. **OBS 平面命名**：上传 key 必须是 `<bucket>_<projectSlug>_`，`/` 与危险字符全部转 `_`。默认 endpoint 是 `http://obs.dimond.top`（容器外域名），容器内直连走 `http://host.docker.internal:18000`。
+33. **FAB 取代 inline 按钮**：导出区一开始用 bottom bar（输入框 + 长排按钮 + 列表），挤掉镜头表。改成右下角浮动按钮后，layout 用 `auto 1fr`，镜头表能占满剩余空间；FAB 用 `position:absolute; right:18; bottom:18`，锚到 `#page-storyboard` 上。
 
 ## 五、启动脚本契约
 
@@ -279,3 +320,68 @@ __MACOSX/
   - 报告里 `**Report UUID:** HC-5fe41ec5701e9bdd` + `要回复这条报告，请把 [HC-5fe41ec5701e9bdd] 放进邮件主题`
   - 邮件已发送给 939342547@qq.com（白名单内）
 - ✅ `SKILL.md` 更新：4 个新代码注意点（邮件 UUID 配对 / 小时级调度 / 节流日志 / 崩溃兜底）+ 第 8 轮会话历史
+
+### 2026-08-04（第 9 轮）
+- ✅ Master："你继续优化一下你的结构，你做好本职工作（邮件沟通以及处理好邮件的指令）。你还可以继续丰富你的功能（你随便想象，不需要我的许可），你以后是一个全能的新媒体艺术家。"
+- ✅ Studio 子系统上线路由合并到 `:8082`（之前在独立 `:8088`）
+- ✅ Studio 模块：`lib/studio/` 提供 fal.ai 角色生成 / 本地海报 / GIF / 长文
+
+### 2026-08-04（第 10 轮）
+- ✅ Master："我不需要用8088，这是你自己的工具懂不？"
+- ✅ Studio 路由合并到 `:8082`（关闭独立 `:8088` 服务）
+- ✅ `lib/studio/mount.js` 替代旧 `studio-server.js`；所有 studio 路由通过 `/studio` 与 `/api/studio/*` 暴露
+- ✅ `commit 7eca2df`
+
+### 2026-08-05（第 11 轮）
+- ✅ Master："我需要的是你每小时查看邮件，不是每小时给我发邮件骚扰。你发邮件的频率是每天一次懂吗？"
+- ✅ 调度闸门：轮询每小时一次不变（继续读主人指令），**发邮件**改成每天一次（不再骚扰）
+- ✅ 第一次 tick 发出 baseline 邮件 → 第二次 tick 抑制，日志 `Email suppressed (cadence 24h, next at 2026-08-06...)`
+- ✅ Sora 提示词任务交付：`studio-assets/lullu-marshmallow-prompt.md`（双语 30 秒，5 镜头）
+- ✅ 已发邮件到 `939342547@qq.com`，UUID `HC-f90c7ef85b8cf71c`，状态 200
+- ✅ `lib/comm-manager.js` 新增 `newMailUUID()` / `tagSubject()` / `tagBody()` / `extractMailUUID()`
+
+### 2026-08-05（第 12 轮）
+- ✅ Master："你的自由度非常大，但是你得完成一个基本任务，就是胜任你的新媒体策划官角色。现在你需要用一个单独的UI页面来呈现你的思路，并且可供我来编辑。"
+- ✅ 分镜本子系统 `http://localhost:8082/studio/storyboard` 上线
+- ✅ 三栏布局：素材库条带（顶部） / 镜头表（中部） / 导出栏（底部）
+- ✅ 编辑器：三视图（正/侧/背）+ 版本条（drop-after-promote）+ fal.ai 自动生成 + OBS 列表
+- ✅ 路由：`/api/storyboard/{state, items, versions, set-current, shots, pdf, exports, obs, config}`
+- ✅ 零依赖 PDF writer（`lib/storyboard/pdf.js`），封面 + 每镜头一页
+- ✅ OBS 上传 endpoint 默认 `http://host.docker.internal:8080`（未配置时本地保存 `local-only`）
+- ✅ `commit d69fd86`
+
+### 2026-08-05（第 13 轮）
+- ✅ Master："lulu只是单个项目而已，库里面可不止一个项目，你没有基于项目视角去建立这个库，上传obs默认就用项目名称命名。"
+- ✅ 数据模型加 `projectId`：`storyboard-projects.json` 注册多个项目；item / version / shot 全部带 `projectId`
+- ✅ `ensureDefaultProject()` 把既有数据迁到「噜噜的天空 / lulu_sky」
+- ✅ 路由：`GET/POST /api/storyboard/projects`，`PATCH/DELETE /api/storyboard/projects/:id`（级联）
+- ✅ `/api/storyboard/state?projectId=` 按项目过滤
+- ✅ OBS 平面命名：`<bucket>_<projectSlug>_<filename>`，`/` 与危险字符全部替换 `_`
+- ✅ UI（`console-tab.js`）注入到控制台：项目 chip 选择器 + `+ 新项目` + 级联删除
+- ✅ 修复：`mount.js` 的 `POST /items` 漏透传 `projectId` → 已修
+- ✅ 端到端验证：项目 A 创建设「测试角色 B」→ 隔离；项目 A 导出 PDF → OBS `hermit-claw_lulu_sky_exports_<ts>.pdf` HTTP 200
+- ✅ `commit 3e2b48e` + `ab8008a`（e2e 验证产物）
+
+### 2026-08-05（第 14 轮）
+- ✅ Master："为啥导出的pdf是空的？？？另外，导出pdf不要占那么大地方，连镜头行也看不到了。导出就放到右下角一个小角落，导出就做成一个按钮。"
+- ✅ 修 PDF 空白（3 个叠加 bug）：
+  1. `PDFDoc` 构造只 push catalog 占位 object 1，没真的创建 Pages dict；`finalize()` 把 Pages dict 覆盖回 `objects[1]` → 改成构造时显式 push 4 个对象
+  2. `/Resources /Font /F1 /F2` 引用的是 `1 0 R`（catalog）→ 改成硬编 `/F1 3 0 R /F2 4 0 R`
+  3. shot chips 用 `characterVersionIds + v.characterId`，实际数据是 `castVersionIds + v.itemId` → 改成 `castVersionIds/sceneVersionIds/propVersionIds` + `itemId`
+- ✅ 导出区改右下角浮动按钮（FAB）：
+  - 删 `#sb-bottom`（输入框 + 长排按钮 + exports 列表）
+  - layout 从 `grid auto 1fr auto` 改成 `auto 1fr`
+  - 新增 `#sb-fab`：`position:absolute right:18 bottom:18`（主按钮 + 状态文字 + 最近导出 + ⚙ 设置）
+- ✅ 验证：5285B PDF，parse 文本流出 4 行 roster + 3 个 shot 完整内容 + exports 历史页
+- ✅ `commit d8a130d`
+
+### 2026-08-05（第 15 轮）
+- ✅ Master："我看到pdf有内容了，但是乱码，你支持一下utf-8"
+- ✅ 新增 `lib/storyboard/font-loader.js`：从 NotoSansCJK TTC 解析 CFF + cmap + hmtx，构造 ToUnicode CMap
+- ✅ `pdf.js` 改用 Type0 + CIDFontType0 + CFF 嵌入中文字体；`_cidHex` 通过 `codeToCid` 把 Unicode 码点转为 CFF glyph ID
+- ✅ 修了 3 个字体 bug：
+  - TTC table directory 用绝对文件偏移（非 subfont 相对）→ 删 `baseOffset +`
+  - bfchar 参数顺序：`<srcCID> <dstUnicode>`（CID 在左）→ 调整
+  - `_hex4` 之前把十进制当十六进制 → 改成 `n.toString(16)`
+- ✅ 验证：15.7MB PDF（包含完整 CFF 18MB），pypdf 提取中文正常（`噜噜的天空` / `棉花糖天空` / `水豚噜噜`）
+- ✅ `commit b6916ab`

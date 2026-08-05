@@ -35,6 +35,25 @@ Hermit-Claw agent container 上运行的标准 Web App（Claude Ask Server）。
 │   ├── user_start.sh      # 旧版子目录启动脚本
 │   ├── start.sh
 │   ├── smoke.sh / smoke_verbose.sh
+│   ├── lib/
+│   │   ├── storyboard/    # 分镜本子系统（第 12-15 轮）
+│   │   │   ├── lib.js            # 库数据模型（character/scene/prop + 版本历史）
+│   │   │   ├── mount.js          # 路由（projects / items / versions / shots / pdf / obs）
+│   │   │   ├── pdf.js            # 零依赖 PDF writer（CJK via Identity-H + CIDFontType0）
+│   │   │   ├── font-loader.js    # NotoSansCJK TTC 解析（cmap + CFF + ToUnicode CMap）
+│   │   │   ├── storyboard.html   # 三栏 UI（素材库条带 / 镜头表 / 浮动导出按钮）
+│   │   │   └── console-tab.js    # 注入到 agent 控制台的 tab 入口
+│   │   ├── studio/         # Studio 子系统（fal.ai 角色 + 本地海报/GIF/长文，第 9 轮）
+│   │   ├── skill-manager.js   # 技能管理核心模块
+│   │   ├── skill-ui.html      # 交互式 Skill 配置 HTML 页面
+│   │   ├── comm-manager.js    # 通信管理核心模块
+│   │   └── console.html       # 主控制台（对外交流页面）
+│   ├── config/            # JSON 状态持久化
+│   │   ├── comm.json / messages.json / reports.json / skills.json
+│   │   ├── storyboard-projects.json / storyboard-library.json
+│   │   ├── storyboard-library-versions.json / storyboard-shots.json
+│   │   └── studio-characters.json / persona-directives.json / oom-watch.json
+│   ├── studio-assets/     # 静态资源（生成的图片/PDF/长文等）
 │   ├── AGENTS.md / BOOTSTRAP.md / HEARTBEAT.md / IDENTITY.md / SOUL.md / TOOLS.md / USER.md
 │   └── systemreadme.md
 ├── logs/
@@ -289,6 +308,77 @@ $ curl -sS -o /dev/null -w "%{http_code}\n" http://host.docker.internal:18001/em
 6. **调度内嵌**：调度器直接挂载在 server 进程内，无需 systemd / crontab，避免容器内权限问题。
 7. **Legacy 兼容**：`getCommConfig()` 检测到旧 `email` / `secretsConfigured` 字段会主动丢弃，确保新代码不会因历史配置崩溃。
 
+## 分镜本子系统（Storyboard）
+
+`http://localhost:8082/studio/storyboard` 是 Master 的"新媒体策划官"主入口（第 12-15 轮构建）。
+本子系统同时在 Agent 控制台 `/console` 的「🎬 分镜本」tab 暴露入口。
+
+### 三栏布局
+
+| 区域 | 内容 |
+| --- | --- |
+| **素材库条带（顶部）** | 类型过滤 `全部 / 人物 / 场景 / 道具`；每张卡显示正视图 + 名字 + 类型 + 当前版本号。**单击**选中并加入当前选中镜头；**双击**进入三视图编辑器。 |
+| **镜头表（中部）** | 每行：`时间 In→Out / 人物形象 chips / 场景 chips / 道具 chips / 文本描述 / 备注 / 版本号 v?`。点击行选中，再点上方素材卡自动绑定；chip 右上角 `×` 删除；上下箭头调顺序。 |
+| **导出按钮（右下角浮动）** | `⬇ 导出 PDF → OBS` 主按钮 + 状态文字 + 最近 50 条导出（本地下载链接 + `obsKey`）+ `⚙ OBS 设置` 子按钮。FAB 锚到页面右下角，不挤占镜头表。 |
+
+### 素材编辑器（双击素材卡弹出）
+
+- **顶部版本条**：单击载入；**双击 = 设为当前**，丢弃其后续所有版本（drop-after-promote）
+- **三视图（正/侧/背）**：每视图独立 `📁 上传 / ☁️ OBS 列表 / 🎲 自动生成(fal.ai) / × 清空` + 独立改进意见 textarea
+- **`保存为新版本`** 从选中版本分支新版本号（v1 → v2 → v3）
+
+### 多项目隔离（第 13 轮）
+
+库不是单项目视角，而是 `config/storyboard-projects.json` 注册多个项目；item / version / shot 全部带 `projectId`。
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/storyboard/projects` | 列出所有项目 |
+| `POST` | `/api/storyboard/projects` | 新建项目（自动生成 slug） |
+| `PATCH` | `/api/storyboard/projects/:id` | 改名 / 改 slug |
+| `DELETE` | `/api/storyboard/projects/:id` | 级联删除项目下所有素材/版本/镜头 |
+| `GET` | `/api/storyboard/state?projectId=` | 按项目过滤返回 items / versions / shots |
+
+`ensureDefaultProject()` 在 state 端点首次命中时把既有数据迁移到「噜噜的天空 / lulu_sky」。
+
+### OBS 平面命名
+
+OBS 上传默认用项目名（slug）做平面：
+
+```
+旧：storyboard/exports/storyboard-1785924884170.pdf
+新：hermit-claw_lulu_sky_exports_storyboard-1785924884170.pdf
+```
+
+格式：`<bucket>_<projectSlug>_<filename>`，`/` 与危险字符全部替换为 `_`。
+
+### PDF 导出（第 14-15 轮）
+
+`POST /api/storyboard/export-pdf`：
+
+1. 调用 `renderStoryboardPdf()` 生成 PDF Buffer
+2. 上传到 OBS（默认 endpoint `http://obs.dimond.top`，endpoint 可在 `⚙ OBS 设置` 子按钮里覆盖）
+3. 落 `cfg.exports[]`（最近 50 条），含 `at / obsKey / localPath / status`
+4. 返回 `{ ok, obsKey, localPath, sizeBytes }`
+
+PDF 格式：
+
+- **封面页**：项目名 + 角色/场景/道具 roster（每行带版本号）
+- **每镜头一页**：标题 / 时间码 / Cast / Scene / Props / Description / Notes / visual placeholder 框
+
+PDF 内嵌字体走 **Identity-H + CIDFontType0 + CFF**，从 `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc` 解析 CFF + cmap + hmtx，构造 `ToUnicode CMap`，支持 CJK + ASCII 混排，pypdf 可正常提取中文文本。
+
+零依赖：纯 Node.js 内置（`fs` / `zlib` / `path`），无 pdfkit / jspdf，符合 228MB cgroup 限制。
+
+### 关键设计
+
+1. **同构数据模型**：character / scene / prop 共用一张 `items` 表，通过 `kind` 字段区分；版本历史统一存 `library-versions.json`，引用 `itemId`
+2. **drop-after-promote**：设某旧版本为"当前"时，自动删除其后所有版本（避免乱）
+3. **chip 复用**：镜头表的 cast / scene / prop 槽都用同一套 `<Chip x>` 组件，操作统一
+4. **多项目命名空间**：项目是顶层维度，所有 API 入参都接受 `projectId`，避免误串
+5. **FAB 而非 inline 按钮**：导出区一开始占了整条 bottom bar，挤掉镜头表；改 FAB 后镜头表能占满剩余空间
+6. **CJK PDF 复用系统字体**：不下载额外字体，直接读 `/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc`，18MB 的 CFF 一次性 embed
+
 ## 关键设计
 
 1. **不直接调用 `claude` CLI**：`server.js` 通过 `spawn('node', [run_claude.js], ...)` 转发，
@@ -346,3 +436,7 @@ echo "$(git rev-parse --short HEAD) <变更描述>" >> logs/commit.txt
 - ✅ 实测发送邮件成功：`{"success":true,"message":"Email sent successfully to master@example.com"}`
 - ✅ 控制台「邮件收发」标签页：主人邮箱 + 接入点 + 探测/拉取/发测试 按钮
 - ✅ 旧的 SMTP/IMAP 表单已移除 — 用户无需填任何凭据
+- ✅ 分镜本子系统 `http://localhost:8082/studio/storyboard` 上线（第 12 轮）
+- ✅ 分镜本加 projects 隔离 + OBS 平面命名 `bucket_project_filename`（第 13 轮）
+- ✅ 修 PDF 空白（Pages dict 自覆盖 / 字体引用 / chips 数据模型）+ 导出改右下角 FAB（第 14 轮）
+- ✅ PDF 支持 CJK：Identity-H + CIDFontType0 + CFF + ToUnicode CMap；pypdf 可正常提取中文（第 15 轮）

@@ -222,6 +222,25 @@ function computeNextRun(schedule) {
     return new Date(base.getTime() + intervalMs).toISOString();
 }
 
+// Decide whether the email-report cadence has elapsed. Defaults to
+// 24h so we never spam master unless they explicitly shortened it.
+function shouldEmailReport(schedule) {
+    const hours = typeof schedule.emailReportHours === 'number' && schedule.emailReportHours > 0
+        ? schedule.emailReportHours
+        : 24;
+    if (!schedule.lastEmailAt) return true;
+    const elapsed = Date.now() - new Date(schedule.lastEmailAt).getTime();
+    return elapsed >= hours * 3600 * 1000;
+}
+
+function computeNextEmail(schedule) {
+    const hours = typeof schedule.emailReportHours === 'number' && schedule.emailReportHours > 0
+        ? schedule.emailReportHours
+        : 24;
+    const base = schedule.lastEmailAt ? new Date(schedule.lastEmailAt) : new Date();
+    return new Date(base.getTime() + hours * 3600 * 1000).toISOString();
+}
+
 // ---------- Message Board ----------
 
 function getMessages() {
@@ -410,10 +429,13 @@ async function runWorkflow() {
     // Step 5: mark processed
     markMessagesProcessed(pending.map(m => m.id));
 
-    // Step 6: send via MCP (if target configured). sendMailViaSkill auto-tags
-    // the outgoing subject with the reportUUID so Master can reply to it.
+    // Step 6: send via MCP — but only when both target is set AND the
+    // email-report cadence (default 24h) has elapsed. Polling keeps
+    // happening every intervalHours; we just don't spam master with a
+    // report each time.
     let mailResult = { ok: false, skipped: true };
-    if (cfg.mail.target) {
+    const emailDue = shouldEmailReport(cfg.schedule);
+    if (cfg.mail.target && emailDue) {
         mailResult = await sendMailViaSkill({
             to: cfg.mail.target,
             subject: `[Hermit-Claw] ${report.title}`,
@@ -421,6 +443,8 @@ async function runWorkflow() {
             uuid: reportUUID,
         });
         if (mailResult.ok) {
+            cfg.schedule.lastEmailAt = nowISO();
+            cfg.schedule.nextEmailAt = computeNextEmail(cfg.schedule);
             addMessage({
                 role: 'agent',
                 thread: 'email-outbox',
@@ -429,6 +453,9 @@ async function runWorkflow() {
             });
         }
         log.push(`- Email sent: ${mailResult.ok ? 'YES' : 'FAILED'} ${mailResult.error || ''}`);
+    } else if (cfg.mail.target) {
+        const nextAt = cfg.schedule.nextEmailAt || computeNextEmail(cfg.schedule);
+        log.push(`- Email suppressed (cadence ${cfg.schedule.emailReportHours || 24}h, next at ${nextAt})`);
     } else {
         log.push(`- Email send skipped (no mail.target configured)`);
     }
@@ -498,4 +525,6 @@ module.exports = {
     sendMailViaSkill,
     pickMailEndpoint,
     computeNextRun,
+    shouldEmailReport,
+    computeNextEmail,
 };

@@ -1,0 +1,24 @@
+{
+  "mail": {
+    "target": "939342547@qq.com",
+    "autoReply": true,
+    "fetchLimit": 20,
+    "fetchDays": 1,
+    "mailEndpoint": "auto"
+  },
+  "mailEndpoint": "auto",
+  "mailEndpointResolved": "http://host.docker.internal:18001",
+  "schedule": {
+    "enabled": true,
+    "intervalHours": 1,
+    "timeOfDay": null,
+    "lastRun": "2026-08-05T01:43:37.503Z",
+    "nextRun": "2026-08-05T02:43:37.503Z",
+    "emailReportHours": 24,
+    "lastEmailAt": "2026-08-05T01:43:24.927Z",
+    "nextEmailAt": "2026-08-06T01:43:24.927Z"
+  },
+  "workInstructions": "",
+  "createdAt": "2026-08-04T04:20:25.987Z",
+  "updatedAt": "2026-08-05T01:43:37.503Z"
+}

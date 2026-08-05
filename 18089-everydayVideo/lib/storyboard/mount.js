@@ -606,10 +606,12 @@ async function handle(req, res, url) {
                 const buf = renderStoryboardPdf({
                     title,
                     project: project ? project.name : (body && body.project),
+                    projectSlug: project ? project.slug : null,
                     characters: items,                 // name kept for PDF readability
                     shots,
                     versionsByCharacter: versionsById,
                     exports: cfg.exports || [],
+                    generatedAt: lib.nowIso(),
                 });
                 const fname = `storyboard-${Date.now()}.pdf`;
                 const localPath = path.join(lib.EXPORT_DIR, fname);

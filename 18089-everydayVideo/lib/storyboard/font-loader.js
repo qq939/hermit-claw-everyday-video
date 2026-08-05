@@ -180,6 +180,9 @@ function _buildToUnicodeCMap(codeToCid) {
     // chosen unicodes are also consecutive; otherwise bfchar.
     const cidToCode = new Map();
     for (const [code, cid] of codeToCid.entries()) {
+        // Skip CIDs > 0xFFFF — Identity-H is 16-bit so they can't
+        // appear in the content stream or in the CMap entries.
+        if (cid > 0xFFFF) continue;
         const prev = cidToCode.get(cid);
         if (prev === undefined || code < prev) cidToCode.set(cid, code);
     }
@@ -236,6 +239,9 @@ function _buildToUnicodeCMap(codeToCid) {
 }
 
 function _hex4(n) {
+    // Identity-H uses 16-bit CIDs; clamp anything higher so the
+    // codespace / bfchar entries stay at exactly 4 hex chars.
+    if (n > 0xFFFF) n = 0;
     return n.toString(16).padStart(4, '0').toUpperCase();
 }
 

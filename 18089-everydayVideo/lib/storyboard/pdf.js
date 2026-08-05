@@ -27,10 +27,13 @@ function _esc(str) {
 // Encode text under Identity-H: each Unicode code point must be
 // translated to its glyph ID (CID) in the CFF, since this is a
 // CID-keyed font. Returns hex literal "<...>".
-//   - For ASCII we fall back to the codepoint itself (matches the
-//     cmap for the BMP Latin block in NotoSansCJK).
-//   - For anything else we look up via codeToCid; missing → CID 0
-//     (.notdef glyph) so the reader doesn't crash.
+//
+// NotoSansCJK cmap layout (the only CIDFont we currently use):
+//   - BMP Latin block (U+0020..U+007E, U+00A0..U+00FF): glyph is at
+//     CID = codepoint + 1 (i.e. U+0020 → 0x0001, U+007E → 0x005F).
+//   - CJK and other blocks: cmap maps codepoint → CID directly.
+//   - Anything missing: CID 0 (.notdef) — the reader will draw a
+//     empty box but won't crash.
 function _cidHex(doc, text) {
     let out = '';
     const c2c = doc._cjk && doc._cjk.codeToCid;
@@ -40,13 +43,24 @@ function _cidHex(doc, text) {
         if (c2c && c2c.has(cp)) {
             cid = c2c.get(cp);
         } else if (cp < 0x100) {
-            // ASCII / Latin-1: the cmap uses CID = codepoint + 1, but
-            // a few values are exposed directly via Identity-H too.
-            // Try the +1 form first, then the raw codepoint.
+            // ASCII / Latin-1: cmap uses CID = codepoint + 1 (no
+            // direct entry for the codepoint itself). Some chars
+            // (e.g. U+00A0 NBSP) may be exposed directly though,
+            // so we already tried `c2c.has(cp)` first.
+            // If the +1 entry isn't there either, fall back to the
+            // raw codepoint — it lines up by coincidence for many
+            // BMP Latin glyphs in NotoSansCJK.
             cid = c2c && c2c.has(cp + 1) ? c2c.get(cp + 1) : cp;
         } else {
             cid = 0; // .notdef
         }
+        // Identity-H uses fixed 2-byte CIDs (0..0xFFFF). NotoSansCJK
+        // can have CIDs > 0xFFFF for some SMP / emoji-range glyphs,
+        // but they only exist because cmap format-12 stores 32-bit
+        // glyph IDs. Under Identity-H, any CID > 0xFFFF is undefined;
+        // substitute CID 0 (.notdef) so the Tj hex payload stays
+        // exactly 4 chars per codepoint.
+        if (cid > 0xFFFF) cid = 0;
         out += (cid >>> 0).toString(16).padStart(4, '0');
     }
     return '<' + out + '>';
@@ -324,17 +338,40 @@ const PAGE_W = 595.28; // A4 portrait, points
 const PAGE_H = 841.89;
 const MARGIN = 36;
 
+// Storyboard UI color palette (matches lib/storyboard/storyboard.html).
+// We pick "printable" approximations that look good on white paper.
+const COLORS = {
+    bg:         [0.984, 0.984, 0.988],   // almost-white (cards)
+    bg2:        [0.961, 0.965, 0.973],   // secondary surface
+    bg3:        [0.929, 0.937, 0.949],   // subtle background
+    line:       [0.851, 0.863, 0.882],   // hairline border
+    line2:      [0.659, 0.694, 0.749],   // stronger border
+    fg:         [0.106, 0.137, 0.176],   // main text
+    fg3:        [0.388, 0.435, 0.498],   // secondary text
+    accent:     [0.345, 0.651, 1.000],   // primary accent (like #58a6ff)
+    accent2:    [0.078, 0.745, 0.502],   // success green
+    err:        [0.973, 0.318, 0.286],   // error red
+    scene:      [0.027, 0.714, 0.831],   // cyan
+    prop:       [0.957, 0.620, 0.043],   // amber
+    character:  [0.345, 0.651, 1.000],   // blue
+};
+
+function _rgb(c) { return `${c[0].toFixed(3)} ${c[1].toFixed(3)} ${c[2].toFixed(3)}`; }
+
+// Wrap text by approximate glyph width. Each CJK char counts as 2;
+// ASCII as ~0.55. Returns array of strings.
 function _wrap(text, max) {
     const out = [];
     const lines = String(text || '').split(/\r?\n/);
     for (const raw of lines) {
         if (!raw) { out.push(''); continue; }
-        // Crude wrap: by character count (CJK-safe approximate).
         let line = '';
         for (const ch of raw) {
             line += ch;
-            // Each CJK char counts as 2; ASCII counts as ~0.55.
-            const widthApprox = [...line].reduce((acc, c) => acc + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 2 : 0.55), 0);
+            const widthApprox = [...line].reduce(
+                (acc, c) => acc + (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(c) ? 2 : 0.55),
+                0
+            );
             if (widthApprox > max) {
                 out.push(line);
                 line = '';
@@ -347,7 +384,15 @@ function _wrap(text, max) {
 
 function _escapePdfString(s) { return _esc(s); }
 
-function _kindLabel(k) { return { character: '角色', scene: '场景', prop: '道具' }[k] || k || '-'; }
+function _kindLabel(k) {
+    return { character: '角色', scene: '场景', prop: '道具' }[k] || k || '-';
+}
+function _kindColor(k) {
+    return COLORS[k] || COLORS.accent;
+}
+function _kindBadge(k) {
+    return { character: '角色', scene: '场景', prop: '道具' }[k] || (k || '-');
+}
 
 // Emit a Tj-ready payload for a string under either encoding:
 //   - CJK installed: Identity-H "<hex16...>" (each codepoint = 2-byte CID)
@@ -358,110 +403,558 @@ function _t(doc, text) {
     return `(${_esc(s)})`;
 }
 
-function renderStoryboardPdf({ title, project, characters, shots, versionsByCharacter, exports = [] }) {
-    const doc = new PDFDoc();
+// ---- content-stream helpers (low-level) ----
+// All helpers return the appended string. The caller concatenates back
+// into its accumulator. (Strings are immutable in JS, so we can't
+// mutate an outer accumulator.)
 
-    // Cover page.
-    let y = PAGE_H - MARGIN;
-    let stream = `BT /F2 22 Tf ${MARGIN} ${y} Td ${_t(doc, title || "Storyboard")} Tj ET\n`;
-    y -= 30;
-    stream += `BT /F1 10 Tf ${MARGIN} ${y} Td ${_t(doc, 'Generated: ' + new Date().toISOString())} Tj ET\n`;
-    y -= 14;
-    if (project) {
-        stream += `BT /F1 10 Tf ${MARGIN} ${y} Td ${_t(doc, 'Project: ' + project)} Tj ET\n`;
-        y -= 14;
+function _rect(stream, x, y, w, h, fill, stroke, lw) {
+    let out = stream;
+    if (fill) {
+        out += `${_rgb(fill)} rg ${x} ${y} ${w} ${h} re f\n`;
     }
-    stream += `BT /F1 10 Tf ${MARGIN} ${y} Td ${_t(doc, 'Hermit-Claw · storyboard')} Tj ET\n`;
+    if (stroke) {
+        out += `${_rgb(stroke)} RG ${lw || 0.5} w ${x} ${y} ${w} ${h} re S\n`;
+    }
+    return out;
+}
+
+function _line(stream, x1, y1, x2, y2, color, lw) {
+    return stream + `${_rgb(color)} RG ${lw || 0.5} w ${x1} ${y1} m ${x2} ${y2} l S\n`;
+}
+
+function _text(stream, doc, x, y, font, size, color, str) {
+    return stream + `BT ${font} ${size} Tf ${_rgb(color)} rg ${x} ${y} Td ${_t(doc, str)} Tj ET\n`;
+}
+
+// ---- higher-level layout helpers ----
+
+function _pageHeader(stream, doc, projectName, sectionTitle) {
+    // Top accent bar
+    let s = _rect(stream, 0, PAGE_H - 4, PAGE_W, 4, COLORS.accent, null);
+    // Subhead line
+    s = _line(s, MARGIN, PAGE_H - 26, PAGE_W - MARGIN, PAGE_H - 26, COLORS.line, 0.5);
+    s = _text(s, doc, MARGIN, PAGE_H - 22, '/F2', 9, COLORS.fg3,
+        projectName || 'Hermit-Claw · Storyboard');
+    if (sectionTitle) {
+        // Right-aligned section title
+        const w = _approxTextWidth(sectionTitle, 9);
+        s = _text(s, doc, PAGE_W - MARGIN - w, PAGE_H - 22, '/F1', 9, COLORS.fg, sectionTitle);
+    }
+    return s;
+}
+
+function _pageFooter(stream, doc, pageNum, totalPages, projectSlug) {
+    let s = _line(stream, MARGIN, MARGIN - 18, PAGE_W - MARGIN, MARGIN - 18, COLORS.line, 0.5);
+    s = _text(s, doc, MARGIN, MARGIN - 30, '/F1', 8, COLORS.fg3,
+        `${projectSlug || 'storyboard'} · ${new Date().toISOString().slice(0, 10)}`);
+    const pn = `Page ${pageNum} / ${totalPages}`;
+    const w = _approxTextWidth(pn, 8);
+    s = _text(s, doc, PAGE_W - MARGIN - w, MARGIN - 30, '/F1', 8, COLORS.fg3, pn);
+    return s;
+}
+
+function _approxTextWidth(s, sizePt) {
+    // Used only for right-alignment. CJK ≈ 1.0em, ASCII ≈ 0.55em.
+    let w = 0;
+    for (const ch of String(s)) {
+        if (/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/.test(ch)) w += sizePt;
+        else w += sizePt * 0.55;
+    }
+    return w;
+}
+
+function _chip(stream, doc, x, y, h, label, kind, withVersion) {
+    const color = _kindColor(kind);
+    const padX = 6;
+    const fs = 8;
+    const textW = _approxTextWidth(label, fs);
+    const verFs = 7;
+    let verW = 0;
+    let verLabel = '';
+    if (withVersion) {
+        verLabel = ` v${withVersion}`;
+        verW = _approxTextWidth(verLabel, verFs);
+    }
+    const w = Math.max(36, padX * 2 + textW + verW + 4);
+    let s = stream;
+    // Pill background
+    s = _rect(s, x, y, w, h, COLORS.bg3, COLORS.line, 0.5);
+    // Small color dot on the left
+    s = _rect(s, x + 3, y + h / 2 - 2, 4, 4, color, null);
+    // Label
+    s = _text(s, doc, x + padX + 4, y + h / 2 - fs / 2 + 1, '/F1', fs, COLORS.fg, label);
+    if (withVersion) {
+        s = _text(s, doc, x + w - padX - verW, y + h / 2 - verFs / 2 + 1, '/F2', verFs, COLORS.accent, verLabel);
+    }
+    return s;
+}
+
+function _sectionTitle(stream, doc, x, y, title, accent) {
+    // Section header: small uppercase label + accent bar under it.
+    let s = _text(stream, doc, x, y, '/F2', 11, COLORS.fg, title);
+    s = _rect(s, x, y - 6, 18, 2, accent || COLORS.accent, null);
+    return s;
+}
+
+function _kindBadgeForItem(stream, doc, x, y, kind) {
+    const color = _kindColor(kind);
+    const label = _kindBadge(kind);
+    const fs = 8;
+    const padX = 5;
+    const w = padX * 2 + _approxTextWidth(label, fs);
+    const h = 12;
+    let s = _rect(stream, x, y, w, h, color, null, 0);
+    s = _text(s, doc, x + padX, y + h / 2 - fs / 2 + 1, '/F2', fs, COLORS.bg, label);
+    return s;
+}
+
+function _placeholderBox(stream, doc, x, y, w, h, label) {
+    // A subtle dashed-looking placeholder (we use 2 opposite diagonals +
+    // a tinted rect to read as "image placeholder").
+    let s = _rect(stream, x, y, w, h, COLORS.bg2, COLORS.line, 0.6);
+    s = _line(s, x, y, x + w, y + h, COLORS.line2, 0.4);
+    s = _line(s, x + w, y, x, y + h, COLORS.line2, 0.4);
+    if (label) {
+        const fs = 9;
+        s = _text(s, doc, x + 8, y + 8, '/F1', fs, COLORS.fg3, label);
+    }
+    return s;
+}
+
+// ---- layout sections ----
+
+function _coverPage(stream, doc, { projectName, title, projectSlug, generatedAt, characters, versionsByCharacter, shots }) {
+    let s = stream;
+    // Hero block: tinted background full-width band
+    s = _rect(s, 0, PAGE_H - 220, PAGE_W, 184, COLORS.bg2, null);
+    s = _rect(s, 0, PAGE_H - 220, PAGE_W, 4, COLORS.accent, null);
+
+    // Project eyebrow
+    s = _text(s, doc, MARGIN, PAGE_H - 56, '/F1', 10, COLORS.accent, 'PROJECT STORYBOARD');
+    // Title
+    s = _text(s, doc, MARGIN, PAGE_H - 92, '/F2', 26, COLORS.fg, title || projectName || 'Storyboard');
+    // Subtitle
+    if (projectName) {
+        const sub = `项目名称 · ${projectName}`;
+        s = _text(s, doc, MARGIN, PAGE_H - 116, '/F1', 11, COLORS.fg3, sub);
+    }
+    // Meta strip
+    const my = PAGE_H - 156;
+    const meta = [
+        ['Generated', generatedAt],
+        ['Slug', projectSlug || '-'],
+        ['Items', String(characters.length)],
+        ['Shots', String(shots.length)],
+    ];
+    let mx = MARGIN;
+    for (const [k, val] of meta) {
+        s = _text(s, doc, mx, my, '/F1', 8, COLORS.fg3, k.toUpperCase());
+        s = _text(s, doc, mx, my - 12, '/F2', 10, COLORS.fg, val);
+        mx += 130;
+    }
+    // Owner line
+    s = _text(s, doc, MARGIN, PAGE_H - 200, '/F1', 9, COLORS.fg3,
+        'Hermit-Claw · storyboard  ·  export-pdf');
+
+    // Roster section
+    let y = PAGE_H - 250;
+    s = _sectionTitle(s, doc, MARGIN, y, '素材库 / Roster', COLORS.accent);
     y -= 22;
 
-    // Character / scene / prop roster on cover.
-    stream += `BT /F2 13 Tf ${MARGIN} ${y} Td ${_t(doc, 'Roster')} Tj ET\n`;
-    y -= 16;
-    for (const c of characters) {
-        const v = c.currentVersionId ? versionsByCharacter[c.currentVersionId] : null;
-        const label = `· [${_kindLabel(c.kind)}] ${c.name}${v ? '  v' + v.versionNo : '  (no version yet)'}`;
-        stream += `BT /F1 10 Tf ${MARGIN} ${y} Td ${_t(doc, label)} Tj ET\n`;
-        y -= 12;
+    // Group by kind
+    const groups = { character: [], scene: [], prop: [] };
+    for (const c of characters) (groups[c.kind] || (groups[c.kind] = [])).push(c);
+    for (const kind of ['character', 'scene', 'prop']) {
+        const items = groups[kind];
+        if (!items || !items.length) continue;
+        // kind badge
+        s = _kindBadgeForItem(s, doc, MARGIN, y - 4, kind);
+        y -= 18;
+        for (const c of items) {
+            const v = c.currentVersionId ? versionsByCharacter[c.currentVersionId] : null;
+            const versionLabel = v ? `v${v.versionNo}` : null;
+            const verCount = c.versionCount || 0;
+            const line = `· ${c.name}`;
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 10, COLORS.fg, line);
+            if (versionLabel) {
+                const w = _approxTextWidth(line, 10);
+                s = _text(s, doc, MARGIN + 8 + w + 8, y, '/F2', 9, COLORS.accent, versionLabel);
+            }
+            if (verCount > 1) {
+                const meta2 = `${verCount} versions`;
+                const w = PAGE_W - MARGIN - MARGIN - _approxTextWidth(meta2, 9);
+                s = _text(s, doc, MARGIN + w, y, '/F1', 9, COLORS.fg3, meta2);
+            }
+            y -= 14;
+            if (y < MARGIN + 40) break;
+        }
+        y -= 4;
         if (y < MARGIN + 40) break;
     }
 
-    doc.addPage(PAGE_W, PAGE_H, stream);
-
-    // One page per shot.
-    for (const shot of shots) {
-        let y2 = PAGE_H - MARGIN;
-        let s = '';
-        s += `BT /F2 14 Tf ${MARGIN} ${y2} Td ${_t(doc, `Shot #${shot.index}  ·  v${shot.versionNo}`)} Tj ET\n`;
-        y2 -= 18;
-        s += `BT /F1 10 Tf ${MARGIN} ${y2} Td ${_t(doc, `${shot.tIn || '00:00'}  ->  ${shot.tOut || '00:05'}`)} Tj ET\n`;
-        y2 -= 16;
-
-        // Cast / scene / prop chips
-        const lookupLabel = (vid, kindSlot, kindLabel2) => {
-            const v = versionsByCharacter[vid];
-            if (!v) return null;
-            const c = characters.find((x) => x.id === v.itemId);
-            return c ? `${c.name} v${v.versionNo}` : null;
-        };
-        const castLabels = (shot.castVersionIds || []).map((vid) => lookupLabel(vid, 'cast')).filter(Boolean);
-        const sceneLabels = (shot.sceneVersionIds || []).map((vid) => lookupLabel(vid, 'scene')).filter(Boolean);
-        const propLabels = (shot.propVersionIds || []).map((vid) => lookupLabel(vid, 'prop')).filter(Boolean);
-        if (castLabels.length) {
-            s += `BT /F1 10 Tf ${MARGIN} ${y2} Td ${_t(doc, 'Cast: ' + castLabels.join(' / '))} Tj ET\n`;
-            y2 -= 13;
+    // TOC
+    if (y > MARGIN + 80) {
+        y -= 8;
+        s = _sectionTitle(s, doc, MARGIN, y, '目录 / Contents', COLORS.accent);
+        y -= 18;
+        const sections = [
+            ['1.', '素材库 / Library (character / scene / prop)'],
+            ['2.', `分镜 / Shots (${shots.length})`],
+            ['3.', '导出历史 / Exports'],
+        ];
+        for (const [n, t] of sections) {
+            s = _text(s, doc, MARGIN + 8, y, '/F2', 10, COLORS.accent, n);
+            s = _text(s, doc, MARGIN + 28, y, '/F1', 10, COLORS.fg, t);
+            y -= 14;
         }
-        if (sceneLabels.length) {
-            s += `BT /F1 10 Tf ${MARGIN} ${y2} Td ${_t(doc, 'Scene: ' + sceneLabels.join(' / '))} Tj ET\n`;
-            y2 -= 13;
-        }
-        if (propLabels.length) {
-            s += `BT /F1 10 Tf ${MARGIN} ${y2} Td ${_t(doc, 'Props: ' + propLabels.join(' / '))} Tj ET\n`;
-            y2 -= 13;
-        }
-        y2 -= 4;
+    }
+    return s;
+}
 
-        // Description wrapped
-        const descLines = _wrap(shot.description || '', 75);
-        if (descLines.length) {
-            s += `BT /F2 11 Tf ${MARGIN} ${y2} Td ${_t(doc, 'Description:')} Tj ET\n`;
-            y2 -= 13;
-            for (const line of descLines.slice(0, 24)) {
-                s += `BT /F1 11 Tf ${MARGIN} ${y2} Td ${_t(doc, line)} Tj ET\n`;
-                y2 -= 13;
+function _libraryPage(stream, doc, item, versions, currentVersion) {
+    let s = stream;
+    const itemName = item.name || '(unnamed)';
+    const kindColor = _kindColor(item.kind);
+
+    // Header card
+    s = _rect(s, MARGIN, PAGE_H - 96, PAGE_W - 2 * MARGIN, 60, COLORS.bg2, COLORS.line, 0.5);
+    // Kind badge
+    s = _kindBadgeForItem(s, doc, MARGIN + 12, PAGE_H - 32, item.kind);
+    // Name
+    s = _text(s, doc, MARGIN + 60, PAGE_H - 30, '/F2', 18, COLORS.fg, itemName);
+    // Subline
+    const cur = currentVersion ? `current v${currentVersion.versionNo}` : 'no version yet';
+    const counts = `${versions.length} version${versions.length === 1 ? '' : 's'}`;
+    s = _text(s, doc, MARGIN + 60, PAGE_H - 50, '/F1', 9, COLORS.fg3, `${cur}  ·  ${counts}  ·  ${item.id || ''}`);
+
+    // Three-view section
+    let y = PAGE_H - 130;
+    s = _sectionTitle(s, doc, MARGIN, y, '三视图 / Three Views', kindColor);
+    y -= 16;
+    const views = ['front', 'side', 'back'];
+    const labels = { front: '正视图 · Front', side: '侧视图 · Side', back: '背视图 · Back' };
+    const viewW = (PAGE_W - 2 * MARGIN - 2 * 12) / 3;
+    const viewH = 180;
+    if (currentVersion) {
+        for (let i = 0; i < 3; i++) {
+            const v = views[i];
+            const src = (currentVersion.sources || {})[v];
+            const x = MARGIN + i * (viewW + 12);
+            const yBox = y - viewH;
+            s = _rect(s, x, yBox, viewW, viewH, COLORS.bg, COLORS.line, 0.5);
+            s = _text(s, doc, x + 8, y - 14, '/F2', 9, COLORS.fg, labels[v]);
+            // Source kind + path
+            let sourceText = '(empty)';
+            if (src) {
+                if (src.kind === 'upload') sourceText = '📁 upload';
+                else if (src.kind === 'obs') sourceText = `☁ ${src.obsKey || 'OBS'}`;
+                else if (src.kind === 'auto') sourceText = `🎲 ${src.prompt ? 'auto (prompt)' : 'auto'}`;
+                if (src.path) sourceText += `  ${src.path.split('/').slice(-2).join('/')}`;
+            }
+            s = _text(s, doc, x + 8, yBox + 12, '/F1', 8, COLORS.fg3, sourceText);
+            // Quick feedback snippet per view
+            if (currentVersion.feedback) {
+                const fb = String(currentVersion.feedback).slice(0, 80);
+                s = _text(s, doc, x + 8, yBox + 26, '/F1', 7, COLORS.fg3, fb);
+            }
+            // Diagonal X marker when empty
+            if (!src) {
+                s = _line(s, x + 4, yBox + 4, x + viewW - 4, yBox + viewH - 4, COLORS.line2, 0.4);
+                s = _line(s, x + viewW - 4, yBox + 4, x + 4, yBox + viewH - 4, COLORS.line2, 0.4);
             }
         }
-        if (shot.notes) {
-            y2 -= 4;
-            s += `BT /F2 9 Tf ${MARGIN} ${y2} Td ${_t(doc, 'Notes:')} Tj ET\n`;
-            y2 -= 11;
-            for (const line of _wrap(shot.notes, 78).slice(0, 8)) {
-                s += `BT /F1 9 Tf ${MARGIN} ${y2} Td ${_t(doc, line)} Tj ET\n`;
-                y2 -= 11;
-            }
+    } else {
+        s = _text(s, doc, MARGIN, y - 10, '/F1', 10, COLORS.fg3, '尚无版本 · no version yet');
+    }
+    y -= viewH + 18;
+
+    // Prompt block
+    if (currentVersion && currentVersion.prompt) {
+        s = _sectionTitle(s, doc, MARGIN, y, '提示词 / Prompt', COLORS.accent);
+        y -= 16;
+        const promptLines = _wrap(currentVersion.prompt, 80);
+        const maxLines = Math.min(promptLines.length, 6);
+        for (let i = 0; i < maxLines; i++) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 10, COLORS.fg, promptLines[i]);
+            y -= 13;
         }
-
-        // Box for the visual placeholder.
-        const boxH = 180;
-        const boxY = Math.max(MARGIN, MARGIN + 20);
-        s += `0.85 0.85 0.85 RG 1 w ${MARGIN} ${boxY} ${PAGE_W - 2 * MARGIN} ${boxH} re S\n`;
-        s += `0.55 0.55 0.55 RG 1 w ${MARGIN} ${boxY + boxH / 2} m ${PAGE_W - MARGIN} ${boxY + boxH / 2} l S\n`;
-        s += `0.55 0.55 0.55 RG 1 w ${MARGIN + (PAGE_W - 2 * MARGIN) / 2} ${boxY} m ${MARGIN + (PAGE_W - 2 * MARGIN) / 2} ${boxY + boxH} l S\n`;
-        s += `BT /F1 9 Tf ${MARGIN + 6} ${boxY + 6} Td ${_t(doc, 'visual preview placeholder')} Tj ET\n`;
-
-        doc.addPage(PAGE_W, PAGE_H, s);
+        if (promptLines.length > maxLines) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 9, COLORS.fg3, `…(${promptLines.length - maxLines} more lines)`);
+            y -= 13;
+        }
+        y -= 6;
     }
 
-    // Exports index page.
-    if (exports.length) {
-        let y3 = PAGE_H - MARGIN;
-        let s = `BT /F2 14 Tf ${MARGIN} ${y3} Td ${_t(doc, 'Recent exports')} Tj ET\n`;
-        y3 -= 18;
-        for (const e of exports.slice(0, 30)) {
-            s += `BT /F1 9 Tf ${MARGIN} ${y3} Td ${_t(doc, `${e.at}  ${e.obsKey || e.localPath}  ${e.status}`)} Tj ET\n`;
-            y3 -= 11;
-            if (y3 < MARGIN) break;
+    // Feedback block
+    if (currentVersion && currentVersion.feedback) {
+        s = _sectionTitle(s, doc, MARGIN, y, '改进意见 / Feedback', COLORS.accent);
+        y -= 16;
+        const fbLines = _wrap(currentVersion.feedback, 80);
+        const maxLines = Math.min(fbLines.length, 4);
+        for (let i = 0; i < maxLines; i++) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 9, COLORS.fg3, fbLines[i]);
+            y -= 12;
         }
-        doc.addPage(PAGE_W, PAGE_H, s);
+        if (fbLines.length > maxLines) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 8, COLORS.fg3, `…(${fbLines.length - maxLines} more lines)`);
+            y -= 12;
+        }
+        y -= 6;
+    }
+
+    // Version history
+    if (versions.length > 1) {
+        s = _sectionTitle(s, doc, MARGIN, y, '版本历史 / Version History', COLORS.accent);
+        y -= 16;
+        for (const v of versions) {
+            const isCur = currentVersion && v.id === currentVersion.id;
+            // Bullet
+            s = _rect(s, MARGIN, y - 4, 8, 8, isCur ? COLORS.accent2 : COLORS.line2, null);
+            // Label
+            const verLabel = `v${v.versionNo}`;
+            s = _text(s, doc, MARGIN + 16, y, '/F2', 10, isCur ? COLORS.accent2 : COLORS.fg, verLabel);
+            const at = (v.createdAt || '').slice(0, 10);
+            const by = v.createdBy ? `by ${v.createdBy}` : '';
+            const meta = `${at} ${by}`.trim();
+            s = _text(s, doc, MARGIN + 56, y, '/F1', 9, COLORS.fg3, meta);
+            // Mini prompt
+            if (v.prompt) {
+                const mini = String(v.prompt).slice(0, 60) + (v.prompt.length > 60 ? '…' : '');
+                s = _text(s, doc, MARGIN + 200, y, '/F1', 9, COLORS.fg, mini);
+            }
+            y -= 14;
+            if (y < MARGIN + 40) break;
+        }
+    }
+    return s;
+}
+
+function _buildVersionMapPerItem(items, versionsByCharacter) {
+    // group versions by itemId, sorted by versionNo descending
+    const byItem = {};
+    for (const v of Object.values(versionsByCharacter || {})) {
+        if (!v || !v.itemId) continue;
+        (byItem[v.itemId] = byItem[v.itemId] || []).push(v);
+    }
+    for (const arr of Object.values(byItem)) {
+        arr.sort((a, b) => (b.versionNo || 0) - (a.versionNo || 0));
+    }
+    return byItem;
+}
+
+function _shotPage(stream, doc, shot, characters, versionsByItem, versionsByCharacter) {
+    let s = stream;
+    const shotTitle = shot.title || `Shot #${shot.index || '?'}`;
+    // Header
+    let y = PAGE_H - 60;
+    s = _rect(s, MARGIN, PAGE_H - 70, PAGE_W - 2 * MARGIN, 36, COLORS.bg2, COLORS.line, 0.5);
+    s = _text(s, doc, MARGIN + 12, PAGE_H - 50, '/F2', 16, COLORS.fg, shotTitle);
+    const timeLabel = `${shot.tIn || '00:00'}  →  ${shot.tOut || '00:05'}`;
+    const tw = _approxTextWidth(timeLabel, 11);
+    s = _text(s, doc, PAGE_W - MARGIN - 12 - tw, PAGE_H - 48, '/F2', 11, COLORS.accent, timeLabel);
+    // Version badge
+    if (shot.versionNo) {
+        const vl = `v${shot.versionNo}`;
+        const vw = _approxTextWidth(vl, 9);
+        s = _text(s, doc, PAGE_W - MARGIN - 12 - tw - 16 - vw, PAGE_H - 48, '/F1', 9, COLORS.fg3, vl);
+    }
+    s = _text(s, doc, MARGIN + 12, PAGE_H - 64, '/F1', 9, COLORS.fg3, `shot.id=${shot.id || ''}`);
+
+    y = PAGE_H - 100;
+
+    // Cast / Scene / Props block
+    const lookupLabel = (vid) => {
+        const v = versionsByCharacter[vid];
+        if (!v) return null;
+        const c = characters.find((x) => x.id === v.itemId);
+        return c ? `${c.name} v${v.versionNo}` : null;
+    };
+
+    const blocks = [
+        { kind: 'character', title: '角色 / Cast', ids: shot.castVersionIds || [] },
+        { kind: 'scene',     title: '场景 / Scene', ids: shot.sceneVersionIds || [] },
+        { kind: 'prop',      title: '道具 / Props', ids: shot.propVersionIds || [] },
+    ];
+    for (const b of blocks) {
+        if (!b.ids.length) continue;
+        s = _sectionTitle(s, doc, MARGIN, y, b.title, _kindColor(b.kind));
+        y -= 16;
+        let cx = MARGIN;
+        const cy = y - 8;
+        const chipH = 16;
+        for (const vid of b.ids) {
+            const label = lookupLabel(vid);
+            if (!label) continue;
+            const [name, ver] = label.split(' v');
+            s = _chip(s, doc, cx, cy - chipH, chipH, name, b.kind, ver);
+            // Compute chip width for cursor advance (we re-implement the math
+            // here so the helper can stay return-only).
+            const padX = 6, fs = 8, verFs = 7;
+            const textW = _approxTextWidth(name, fs);
+            const verLabel = ` v${ver}`;
+            const verW = _approxTextWidth(verLabel, verFs);
+            const chipW = Math.max(36, padX * 2 + textW + verW + 4);
+            cx += chipW + 6;
+            if (cx > PAGE_W - MARGIN - 60) {
+                cx = MARGIN;
+                y -= chipH + 6;
+            }
+        }
+        if (cx !== MARGIN) y -= chipH + 6;
+        y -= 4;
+    }
+
+    // Description
+    if (shot.description) {
+        s = _sectionTitle(s, doc, MARGIN, y, '描述 / Description', COLORS.accent);
+        y -= 16;
+        const descLines = _wrap(shot.description, 80);
+        for (const line of descLines.slice(0, 12)) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 11, COLORS.fg, line);
+            y -= 14;
+        }
+        if (descLines.length > 12) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 9, COLORS.fg3, `…(${descLines.length - 12} more lines)`);
+            y -= 13;
+        }
+        y -= 6;
+    }
+
+    // Notes
+    if (shot.notes) {
+        s = _sectionTitle(s, doc, MARGIN, y, '备注 / Notes', COLORS.accent);
+        y -= 16;
+        const noteLines = _wrap(shot.notes, 80);
+        for (const line of noteLines.slice(0, 6)) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 9, COLORS.fg3, line);
+            y -= 12;
+        }
+        if (noteLines.length > 6) {
+            s = _text(s, doc, MARGIN + 8, y, '/F1', 8, COLORS.fg3, `…(${noteLines.length - 6} more lines)`);
+            y -= 11;
+        }
+        y -= 6;
+    }
+
+    // Visual placeholder box (3-up: front / dialog / action)
+    const boxY = MARGIN + 6;
+    const boxH = Math.max(110, y - boxY - 16);
+    if (boxH > 50) {
+        s = _placeholderBox(s, doc, MARGIN, boxY, PAGE_W - 2 * MARGIN, boxH, 'visual preview placeholder');
+        const third = (PAGE_W - 2 * MARGIN) / 3;
+        s = _line(s, MARGIN + third, boxY, MARGIN + third, boxY + boxH, COLORS.line2, 0.4);
+        s = _line(s, MARGIN + 2 * third, boxY, MARGIN + 2 * third, boxY + boxH, COLORS.line2, 0.4);
+        s = _text(s, doc, MARGIN + 8, boxY + boxH - 14, '/F1', 8, COLORS.fg3, '正 / 侧 / 背  (storyboard frames)');
+    }
+    return s;
+}
+
+function _exportsPage(stream, doc, exports) {
+    let s = stream;
+    let y = PAGE_H - 60;
+    s = _sectionTitle(s, doc, MARGIN, y, '导出历史 / Exports', COLORS.accent);
+    y -= 18;
+    // Column header
+    s = _text(s, doc, MARGIN, y, '/F1', 8, COLORS.fg3, 'TIME');
+    s = _text(s, doc, MARGIN + 150, y, '/F1', 8, COLORS.fg3, 'TARGET');
+    s = _text(s, doc, MARGIN + 360, y, '/F1', 8, COLORS.fg3, 'STATUS');
+    s = _text(s, doc, PAGE_W - MARGIN - 60, y, '/F1', 8, COLORS.fg3, 'BYTES');
+    s = _line(s, MARGIN, y - 4, PAGE_W - MARGIN, y - 4, COLORS.line, 0.5);
+    y -= 16;
+    for (const e of exports.slice(0, 30)) {
+        const at = (e.at || '').slice(0, 19).replace('T', ' ');
+        const target = e.obsKey || (e.localPath || '').split('/').pop() || '-';
+        const status = e.status || '-';
+        const statusColor = status === 'uploaded' ? COLORS.accent2 : COLORS.fg3;
+        s = _text(s, doc, MARGIN, y, '/F1', 9, COLORS.fg, at);
+        s = _text(s, doc, MARGIN + 150, y, '/F1', 9, COLORS.fg, target);
+        s = _text(s, doc, MARGIN + 360, y, '/F2', 9, statusColor, status);
+        if (e.bytes) {
+            const b = (e.bytes / 1024).toFixed(1) + ' KB';
+            const bw = _approxTextWidth(b, 9);
+            s = _text(s, doc, PAGE_W - MARGIN - bw, y, '/F1', 9, COLORS.fg3, b);
+        }
+        y -= 14;
+        if (y < MARGIN + 30) break;
+    }
+    if (!exports.length) {
+        s = _text(s, doc, MARGIN, y, '/F1', 10, COLORS.fg3, '(no exports yet)');
+    }
+    return s;
+}
+
+function renderStoryboardPdf({
+    title,
+    project,
+    projectSlug,
+    characters = [],
+    shots = [],
+    versionsByCharacter = {},
+    exports = [],
+    generatedAt,
+}) {
+    const doc = new PDFDoc();
+
+    // Build per-item version list (newest first)
+    const versionsByItem = _buildVersionMapPerItem(characters, versionsByCharacter);
+
+    // Compute total pages so footer can render "X / Y".
+    // 1 cover + 1 library-item per item + 1 page per shot + 1 exports (if any)
+    const libPages = characters.length;
+    const totalPages = 1 + libPages + shots.length + (exports.length ? 1 : 0);
+    let pageNum = 0;
+
+    // ─── Cover page ───────────────────────────────────────────────
+    {
+        let stream = '';
+        pageNum = 1;
+        stream = _pageHeader(stream, doc, project, 'Cover');
+        stream = _coverPage(stream, doc, {
+            projectName: project,
+            title,
+            projectSlug,
+            generatedAt: generatedAt || new Date().toISOString(),
+            characters,
+            versionsByCharacter,
+            shots,
+        });
+        stream = _pageFooter(stream, doc, pageNum, totalPages, projectSlug || project);
+        doc.addPage(PAGE_W, PAGE_H, stream);
+    }
+
+    // ─── Library pages (one per item) ─────────────────────────────
+    for (const item of characters) {
+        const versions = versionsByItem[item.id] || [];
+        const currentVersion = item.currentVersionId
+            ? versionsByCharacter[item.currentVersionId]
+            : (versions[0] || null);
+        let stream = '';
+        pageNum++;
+        stream = _pageHeader(stream, doc, project, `Library / ${_kindBadge(item.kind)}`);
+        stream = _libraryPage(stream, doc, item, versions, currentVersion);
+        stream = _pageFooter(stream, doc, pageNum, totalPages, projectSlug || project);
+        doc.addPage(PAGE_W, PAGE_H, stream);
+    }
+
+    // ─── Shot pages (one per shot) ────────────────────────────────
+    for (const shot of shots) {
+        let stream = '';
+        pageNum++;
+        stream = _pageHeader(stream, doc, project, `Shot #${shot.index || '?'}`);
+        stream = _shotPage(stream, doc, shot, characters, versionsByItem, versionsByCharacter);
+        stream = _pageFooter(stream, doc, pageNum, totalPages, projectSlug || project);
+        doc.addPage(PAGE_W, PAGE_H, stream);
+    }
+
+    // ─── Exports page ─────────────────────────────────────────────
+    if (exports.length) {
+        let stream = '';
+        pageNum++;
+        stream = _pageHeader(stream, doc, project, 'Exports');
+        stream = _exportsPage(stream, doc, exports);
+        stream = _pageFooter(stream, doc, pageNum, totalPages, projectSlug || project);
+        doc.addPage(PAGE_W, PAGE_H, stream);
     }
 
     return doc.finalize();

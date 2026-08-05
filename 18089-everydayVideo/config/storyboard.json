@@ -5,6 +5,39 @@
   "pdfFooter": "Hermit-Claw · storyboard",
   "exports": [
     {
+      "at": "2026-08-05T10:19:28.975Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785925168817.pdf",
+      "bytes": 4290,
+      "obsKey": "exports/storyboard-1785925168817.pdf",
+      "obsFullName": "hermit-claw_lulu_sky_exports_storyboard-1785925168817.pdf",
+      "projectId": "sb-proj-msfxi32j-yb",
+      "projectSlug": "lulu_sky",
+      "status": "uploaded",
+      "error": null
+    },
+    {
+      "at": "2026-08-05T10:19:16.592Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785925156408.pdf",
+      "bytes": 4184,
+      "obsKey": "exports/storyboard-1785925156408.pdf",
+      "obsFullName": "hermit-claw_lulu_sky_exports_storyboard-1785925156408.pdf",
+      "projectId": "sb-proj-msfxi32j-yb",
+      "projectSlug": "lulu_sky",
+      "status": "uploaded",
+      "error": null
+    },
+    {
+      "at": "2026-08-05T10:19:05.663Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785925145523.pdf",
+      "bytes": 2010,
+      "obsKey": "exports/storyboard-1785925145523.pdf",
+      "obsFullName": "hermit-claw_卡通小狗阿毛_exports_storyboard-1785925145523.pdf",
+      "projectId": "sb-proj-msfxnuby-1w",
+      "projectSlug": "卡通小狗阿毛",
+      "status": "uploaded",
+      "error": null
+    },
+    {
       "at": "2026-08-05T10:14:44.309Z",
       "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785924884170.pdf",
       "bytes": 3962,

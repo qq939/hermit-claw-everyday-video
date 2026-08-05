@@ -1,0 +1,48 @@
+{
+  "items": [
+    {
+      "id": "sb-character-msfwam0p-x2",
+      "kind": "character",
+      "name": "水豚噜噜",
+      "theme": "capybara, ASMR",
+      "tags": [],
+      "createdAt": "2026-08-05T09:39:10.969Z",
+      "currentVersionId": "sb-ver-character-msfwam1e-2wx",
+      "versionCount": 1,
+      "projectId": "sb-proj-msfxi32j-yb"
+    },
+    {
+      "id": "sb-scene-msfwam37-6d7",
+      "kind": "scene",
+      "name": "棉花糖天空",
+      "theme": "marshmallow clouds, golden hour",
+      "tags": [],
+      "createdAt": "2026-08-05T09:39:11.059Z",
+      "currentVersionId": "sb-ver-scene-msfwam3z-5qu",
+      "versionCount": 1,
+      "projectId": "sb-proj-msfxi32j-yb"
+    },
+    {
+      "id": "sb-prop-msfwbrqc-r1",
+      "kind": "prop",
+      "name": "棉花糖云朵",
+      "theme": "soft pastel clouds, fluffy white",
+      "tags": [],
+      "createdAt": "2026-08-05T09:40:05.028Z",
+      "currentVersionId": null,
+      "versionCount": 0,
+      "projectId": "sb-proj-msfxi32j-yb"
+    },
+    {
+      "id": "sb-scene-msfwbrr6-6n8",
+      "kind": "scene",
+      "name": "机舱内",
+      "theme": "airplane cabin, soft window light",
+      "tags": [],
+      "createdAt": "2026-08-05T09:40:05.058Z",
+      "currentVersionId": null,
+      "versionCount": 0,
+      "projectId": "sb-proj-msfxi32j-yb"
+    }
+  ]
+}

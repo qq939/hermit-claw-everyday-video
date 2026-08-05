@@ -306,12 +306,22 @@ const server = http.createServer((req, res) => {
     }
 
     // ---- Console Routes ----
-    // Home page → console
+    // Home page → console (wrapped to inject the storyboard library tab)
     if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/console')) {
         try {
             const html = fs.readFileSync(CONSOLE_HTML, 'utf8');
+            // Inject the storyboard tab embed just before </body> so
+            // master can edit / manage the character / scene / prop library
+            // and shot table directly inside the Agent 控制台.
+            const embedTag = '<script src="/api/storyboard/console-tab.js"></script>';
+            let wrapped = html;
+            if (wrapped.includes('</body>')) {
+                wrapped = wrapped.replace('</body>', embedTag + '\n</body>');
+            } else {
+                wrapped = wrapped + embedTag;
+            }
             res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end(html);
+            res.end(wrapped);
         } catch (e) {
             res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
             res.end('Console UI not found');

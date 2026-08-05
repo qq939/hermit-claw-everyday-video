@@ -1,0 +1,53 @@
+{
+  "shots": [
+    {
+      "id": "sb-shot-msfwam5s-65",
+      "index": 1,
+      "tIn": "00:00",
+      "tOut": "00:05",
+      "castVersionIds": [
+        "sb-ver-character-msfwam1e-2wx"
+      ],
+      "sceneVersionIds": [
+        "sb-ver-scene-msfwam3z-5qu"
+      ],
+      "propVersionIds": [],
+      "description": "噜噜被卷入云海",
+      "notes": "",
+      "versionNo": 3,
+      "parentShotId": "sb-shot-msfwam5s-65",
+      "updatedAt": "2026-08-05T09:39:11.213Z",
+      "projectId": "sb-proj-msfxi32j-yb"
+    },
+    {
+      "id": "sb-shot-msfwbrrx-62b",
+      "index": 2,
+      "tIn": "00:05",
+      "tOut": "00:15",
+      "castVersionIds": [],
+      "sceneVersionIds": [],
+      "propVersionIds": [],
+      "description": "噜噜被卷出舱门，在棉花糖云上弹跳",
+      "notes": "镜头要轻、慢，ASMR 环境音",
+      "versionNo": 1,
+      "parentShotId": null,
+      "updatedAt": "2026-08-05T09:40:05.085Z",
+      "projectId": "sb-proj-msfxi32j-yb"
+    },
+    {
+      "id": "sb-shot-msfwbrsl-y5",
+      "index": 3,
+      "tIn": "00:15",
+      "tOut": "00:30",
+      "castVersionIds": [],
+      "sceneVersionIds": [],
+      "propVersionIds": [],
+      "description": "噜噜撕开云朵吃，柔光特写",
+      "notes": "蓬松感、奶油味",
+      "versionNo": 1,
+      "parentShotId": null,
+      "updatedAt": "2026-08-05T09:40:05.109Z",
+      "projectId": "sb-proj-msfxi32j-yb"
+    }
+  ]
+}

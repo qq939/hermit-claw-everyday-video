@@ -108,40 +108,97 @@ function parseMultipart(req, boundary, cb) {
 }
 
 // ----- OBS client -----
+//
+// Targets the obs.dimond.top / obs2.dimond.top FastAPI service (per
+// master's instruction). Protocol (from /openapi.json):
+//   POST   /                       multipart form, field "file", filename in form
+//   GET    /{filename}             download (public)
+//   DELETE /{filename}             delete
+//   PUT    /{filename}             alt upload (raw body)
+// No list endpoint — picker falls back to "paste a filename / URL".
 
-async function obsList(prefix) {
+function _obsBase() {
     const cfg = lib.getConfig();
-    if (!cfg.obsEndpoint) return { ok: false, error: 'obsEndpoint not configured' };
-    const url = `${cfg.obsEndpoint.replace(/\/$/, '')}/list?bucket=${encodeURIComponent(cfg.obsBucket)}&prefix=${encodeURIComponent(prefix || '')}`;
-    try {
-        const r = await fetch(url, { method: 'GET', headers: cfg.obsApiKey ? { Authorization: `Bearer ${cfg.obsApiKey}` } : {} });
-        if (!r.ok) return { ok: false, error: `obs list ${r.status}` };
-        const j = await r.json();
-        return { ok: true, items: j.items || j.files || j.objects || (Array.isArray(j) ? j : []) };
-    } catch (e) {
-        return { ok: false, error: `obs unreachable: ${e.message}` };
-    }
+    return (cfg.obsEndpoint || '').replace(/\/$/, '');
 }
 
-async function obsUpload(localPath, obsKey) {
+function _obsAuthHeader() {
+    const cfg = lib.getConfig();
+    return cfg.obsApiKey ? { Authorization: `Bearer ${cfg.obsApiKey}` } : {};
+}
+
+async function obsList(prefix) {
+    // The dimond OBS has no list endpoint. We try a small set of common
+    // paths anyway so a custom-mirror install (e.g. an S3-compatible
+    // gateway) can still work; if none work, surface a helpful error.
+    const cfg = lib.getConfig();
+    if (!cfg.obsEndpoint) return { ok: false, error: 'obsEndpoint not configured' };
+    const base = _obsBase();
+    const bucket = cfg.obsBucket || 'hermit-claw';
+    const candidates = [
+        `${base}/api/list?bucket=${encodeURIComponent(bucket)}&prefix=${encodeURIComponent(prefix || '')}`,
+        `${base}/list?bucket=${encodeURIComponent(bucket)}&prefix=${encodeURIComponent(prefix || '')}`,
+        `${base}/v1/objects?bucket=${encodeURIComponent(bucket)}&prefix=${encodeURIComponent(prefix || '')}`,
+        `${base}/${encodeURIComponent(bucket)}?list-type=2&prefix=${encodeURIComponent(prefix || '')}`,
+    ];
+    for (const url of candidates) {
+        try {
+            const r = await fetch(url, { method: 'GET', headers: _obsAuthHeader(), signal: AbortSignal.timeout(5000) });
+            if (!r.ok) continue;
+            const j = await r.json().catch(() => null);
+            if (!j) continue;
+            const items = j.items || j.files || j.objects || (Array.isArray(j.Contents)
+                ? j.Contents.map((c) => ({ key: c.Key, size: c.Size, url: `${base}/${bucket}/${c.Key}`, mtime: c.LastModified }))
+                : (Array.isArray(j) ? j : []));
+            if (items.length) return { ok: true, items, note: 'mirror with list endpoint' };
+        } catch (_) {}
+    }
+    return {
+        ok: false,
+        error: '此 OBS 服务没有 list 端点（obs.dimond.top 仅支持上传 / 下载）。请用「粘贴文件名 / URL」方式选图。',
+        noList: true,
+    };
+}
+
+async function obsUpload(localPath, obsKey, projectSlug) {
     const cfg = lib.getConfig();
     if (!cfg.obsEndpoint) return { ok: false, error: 'obsEndpoint not configured', obsKey: null };
+    const base = _obsBase();
+    const bucket = cfg.obsBucket || 'hermit-claw';
+    let buf;
+    try { buf = fs.readFileSync(localPath); }
+    catch (e) { return { ok: false, error: `local read failed: ${e.message}`, obsKey }; }
+    // The dimond OBS server reads the filename from the multipart form
+    // and stores it at /{filename}. Its root namespace is flat, so we
+    // encode "<bucket>/<projectSlug>/<key>" as
+    // "<bucket>_<projectSlug>_<...with / replaced by _>" so multiple
+    // buckets / projects / sub-keys don't collide on the same root.
+    const segments = [bucket, projectSlug || 'unscoped', obsKey].map((s) => String(s).replace(/[\/\\:?*"<>|]/g, '_').replace(/\s+/g, '_'));
+    const flatName = segments.join('_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    const boundary = '----sb' + Math.random().toString(16).slice(2);
+    const head = Buffer.from(
+        `--${boundary}\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="${flatName}"\r\n` +
+        `Content-Type: application/octet-stream\r\n\r\n`
+    );
+    const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+    const body = Buffer.concat([head, buf, tail]);
     try {
-        const stat = fs.statSync(localPath);
-        const stream = fs.createReadStream(localPath);
-        // Use Node 18+ global fetch (available in the container).
-        const url = `${cfg.obsEndpoint.replace(/\/$/, '')}/upload?bucket=${encodeURIComponent(cfg.obsBucket)}&key=${encodeURIComponent(obsKey)}`;
-        const r = await fetch(url, {
+        const r = await fetch(`${base}/`, {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/octet-stream',
-                'Content-Length': String(stat.size),
-                ...(cfg.obsApiKey ? { Authorization: `Bearer ${cfg.obsApiKey}` } : {}),
+                'Content-Type': `multipart/form-data; boundary=${boundary}`,
+                'Content-Length': String(body.length),
+                ..._obsAuthHeader(),
             },
-            body: stream,
+            body,
+            signal: AbortSignal.timeout(30000),
         });
-        if (!r.ok) return { ok: false, error: `obs upload ${r.status}: ${await r.text().catch(() => '')}`, obsKey };
-        return { ok: true, obsKey, bytes: stat.size };
+        if (!r.ok) {
+            return { ok: false, error: `obs upload ${r.status}: ${await r.text().catch(() => '')}`, obsKey };
+        }
+        const url = `${base}/${flatName}`;
+        return { ok: true, obsKey, bytes: buf.length, url, fullName: flatName };
     } catch (e) {
         return { ok: false, error: `obs unreachable: ${e.message}`, obsKey };
     }
@@ -150,9 +207,20 @@ async function obsUpload(localPath, obsKey) {
 async function obsFetch(obsKey, saveTo) {
     const cfg = lib.getConfig();
     if (!cfg.obsEndpoint) return { ok: false, error: 'obsEndpoint not configured' };
-    const url = `${cfg.obsEndpoint.replace(/\/$/, '')}/download?bucket=${encodeURIComponent(cfg.obsBucket)}&key=${encodeURIComponent(obsKey)}`;
+    const base = _obsBase();
+    // obsKey can be a full URL, a relative key, or already-flat. Normalize.
+    let url;
+    if (/^https?:\/\//i.test(obsKey)) {
+        url = obsKey;
+    } else {
+        // Backward-compat: old-style <bucket>_<...> flat names still
+        // work as a direct GET. New-style <bucket>_<proj>_<key> too.
+        const bucket = cfg.obsBucket || 'hermit-claw';
+        const flatName = `${bucket}_${obsKey.replace(/[\/\\:?*"<>|]/g, '_').replace(/\s+/g, '_')}`.replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        url = `${base}/${flatName}`;
+    }
     try {
-        const r = await fetch(url, { headers: cfg.obsApiKey ? { Authorization: `Bearer ${cfg.obsApiKey}` } : {} });
+        const r = await fetch(url, { headers: _obsAuthHeader(), signal: AbortSignal.timeout(15000) });
         if (!r.ok) return { ok: false, error: `obs fetch ${r.status}` };
         const buf = Buffer.from(await r.arrayBuffer());
         fs.writeFileSync(saveTo, buf);
@@ -228,6 +296,19 @@ async function handle(req, res, url) {
         return true;
     }
 
+    // ---- embed script (loaded by /console via server.js wrap) ----
+    if (req.method === 'GET' && url.pathname === '/api/storyboard/console-tab.js') {
+        try {
+            const js = fs.readFileSync(path.join(__dirname, 'console-tab.js'), 'utf8');
+            res.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8' });
+            res.end(js);
+        } catch (e) {
+            res.writeHead(500, { 'Content-Type': 'text/plain' });
+            res.end('embed script missing: ' + e.message);
+        }
+        return true;
+    }
+
     // ---- asset streaming (uploads etc.) ----
     if (req.method === 'GET' && url.pathname.startsWith('/api/storyboard/asset/')) {
         const name = decodeURIComponent(url.pathname.slice('/api/storyboard/asset/'.length));
@@ -251,11 +332,49 @@ async function handle(req, res, url) {
 
     // ---- state ----
     if (req.method === 'GET' && url.pathname === '/api/storyboard/state') {
-        const items = lib.listItems();
-        const versions = lib.listVersions();
-        const shots = lib.listShots();
+        // Auto-backfill a default project from legacy data on first load.
+        lib.ensureDefaultProject();
+        const projects = lib.listProjects();
+        let projectId = url.searchParams.get('projectId');
+        if (!projectId && projects.length) projectId = projects[0].id;
+        const items = projectId ? lib.listItems({ projectId }) : lib.listItems();
+        const versions = projectId ? lib.listVersions({ projectId }) : lib.listVersions();
+        const shots = projectId ? lib.listShots({ projectId }) : lib.listShots();
         const cfg = lib.getConfig();
-        respondJSON(res, 200, { items, versions, shots, config: cfg, kinds: lib.KINDS });
+        const currentProject = projectId ? lib.getProject(projectId) : null;
+        respondJSON(res, 200, {
+            items, versions, shots, config: cfg, kinds: lib.KINDS,
+            projects, currentProjectId: currentProject ? currentProject.id : null,
+        });
+        return true;
+    }
+
+    // ---- projects ----
+    if (req.method === 'GET' && url.pathname === '/api/storyboard/projects') {
+        respondJSON(res, 200, { projects: lib.listProjects() });
+        return true;
+    }
+    if (req.method === 'POST' && url.pathname === '/api/storyboard/projects') {
+        parseJSONBody(req, (body) => {
+            if (!body || !body.name) { respondJSON(res, 400, { error: 'name required' }); return; }
+            const p = lib.createProject({ name: body.name, slug: body.slug });
+            respondJSON(res, 200, { ok: true, project: p });
+        });
+        return true;
+    }
+    const projMatch = url.pathname.match(/^\/api\/storyboard\/projects\/([^\/]+)$/);
+    if (projMatch && (req.method === 'PATCH' || req.method === 'DELETE')) {
+        const id = decodeURIComponent(projMatch[1]);
+        if (req.method === 'DELETE') {
+            lib.deleteProject(id);
+            respondJSON(res, 200, { ok: true });
+            return true;
+        }
+        parseJSONBody(req, (body) => {
+            if (!body) { respondJSON(res, 400, { error: 'invalid body' }); return; }
+            const p = lib.updateProject(id, body);
+            respondJSON(res, p ? 200 : 404, p ? { ok: true, project: p } : { error: 'not found' });
+        });
         return true;
     }
 
@@ -263,7 +382,7 @@ async function handle(req, res, url) {
     if (req.method === 'POST' && url.pathname === '/api/storyboard/items') {
         parseJSONBody(req, (body) => {
             if (!body || !body.name) { respondJSON(res, 400, { error: 'name required' }); return; }
-            const item = lib.createItem({ name: body.name, kind: body.kind, theme: body.theme, tags: body.tags });
+            const item = lib.createItem({ name: body.name, kind: body.kind, theme: body.theme, tags: body.tags, projectId: body.projectId });
             respondJSON(res, 200, { ok: true, item });
         });
         return true;
@@ -474,16 +593,19 @@ async function handle(req, res, url) {
     if (req.method === 'POST' && url.pathname === '/api/storyboard/export-pdf') {
         parseJSONBody(req, async (body) => {
             try {
-                const items = lib.listItems();
-                const versions = lib.listVersions();
-                const shots = lib.listShots();
+                const projectId = (body && body.projectId) || lib.getDefaultProjectId();
+                const project = projectId ? lib.getProject(projectId) : null;
+                const items = lib.listItems({ projectId });
+                const versions = lib.listVersions({ projectId });
+                const shots = lib.listShots({ projectId });
                 const versionsById = {};
                 for (const v of versions) versionsById[v.id] = { ...v, item: items.find((x) => x.id === v.itemId) };
                 const cfg = lib.getConfig();
-                const title = (body && body.title) || `${cfg.pdfFooter || 'Storyboard'} · ${lib.nowIso().slice(0, 10)}`;
+                const title = (body && body.title)
+                    || `${project ? project.name : (cfg.pdfFooter || 'Storyboard')} · ${lib.nowIso().slice(0, 10)}`;
                 const buf = renderStoryboardPdf({
                     title,
-                    project: body && body.project,
+                    project: project ? project.name : (body && body.project),
                     characters: items,                 // name kept for PDF readability
                     shots,
                     versionsByCharacter: versionsById,
@@ -493,10 +615,11 @@ async function handle(req, res, url) {
                 const localPath = path.join(lib.EXPORT_DIR, fname);
                 fs.writeFileSync(localPath, buf);
                 // Upload to OBS if configured, else mark pending.
-                const obsKey = `storyboard/exports/${fname}`;
+                const obsKey = `exports/${fname}`;
+                const projectSlug = project ? project.slug : 'unscoped';
                 let up;
                 if (cfg.obsEndpoint) {
-                    up = await obsUpload(localPath, obsKey);
+                    up = await obsUpload(localPath, obsKey, projectSlug);
                 } else {
                     up = { ok: false, error: 'obsEndpoint not configured', obsKey: null };
                 }
@@ -505,6 +628,9 @@ async function handle(req, res, url) {
                     localPath,
                     bytes: buf.length,
                     obsKey: up && up.ok ? obsKey : null,
+                    obsFullName: up && up.ok ? up.fullName : null,
+                    projectId: project ? project.id : null,
+                    projectSlug: project ? project.slug : null,
                     status: up && up.ok ? 'uploaded' : 'local-only',
                     error: up && up.ok ? null : (up && up.error),
                 };

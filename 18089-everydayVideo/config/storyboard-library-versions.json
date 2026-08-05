@@ -1,0 +1,38 @@
+{
+  "versions": [
+    {
+      "id": "sb-ver-character-msfwam1e-2wx",
+      "itemId": "sb-character-msfwam0p-x2",
+      "kind": "character",
+      "parentVersionId": null,
+      "versionNo": 1,
+      "prompt": "capybara Lullu",
+      "feedback": "基础形象",
+      "sources": {
+        "front": null,
+        "side": null,
+        "back": null
+      },
+      "createdAt": "2026-08-05T09:39:10.994Z",
+      "createdBy": "master",
+      "projectId": "sb-proj-msfxi32j-yb"
+    },
+    {
+      "id": "sb-ver-scene-msfwam3z-5qu",
+      "itemId": "sb-scene-msfwam37-6d7",
+      "kind": "scene",
+      "parentVersionId": null,
+      "versionNo": 1,
+      "prompt": "sky of marshmallow clouds",
+      "feedback": "sunset cloudscape",
+      "sources": {
+        "front": null,
+        "side": null,
+        "back": null
+      },
+      "createdAt": "2026-08-05T09:39:11.087Z",
+      "createdBy": "master",
+      "projectId": "sb-proj-msfxi32j-yb"
+    }
+  ]
+}

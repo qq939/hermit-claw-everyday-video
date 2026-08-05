@@ -1,9 +1,63 @@
 {
-  "obsEndpoint": "",
+  "obsEndpoint": "http://obs.dimond.top",
   "obsBucket": "hermit-claw",
   "obsApiKey": "",
   "pdfFooter": "Hermit-Claw · storyboard",
   "exports": [
+    {
+      "at": "2026-08-05T10:14:44.309Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785924884170.pdf",
+      "bytes": 3962,
+      "obsKey": "exports/storyboard-1785924884170.pdf",
+      "obsFullName": "hermit-claw_lulu_sky_exports_storyboard-1785924884170.pdf",
+      "projectId": "sb-proj-msfxi32j-yb",
+      "projectSlug": "lulu_sky",
+      "status": "uploaded",
+      "error": null
+    },
+    {
+      "at": "2026-08-05T10:14:38.306Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785924878119.pdf",
+      "bytes": 3855,
+      "obsKey": "exports/storyboard-1785924878119.pdf",
+      "obsFullName": "hermit-claw_lulu_sky_exports_storyboard-1785924878119.pdf",
+      "projectId": "sb-proj-msfxi32j-yb",
+      "projectSlug": "lulu_sky",
+      "status": "uploaded",
+      "error": null
+    },
+    {
+      "at": "2026-08-05T10:05:51.971Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785924351741.pdf",
+      "bytes": 3735,
+      "obsKey": "storyboard/exports/storyboard-1785924351741.pdf",
+      "status": "uploaded",
+      "error": null
+    },
+    {
+      "at": "2026-08-05T10:05:09.808Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785924309131.pdf",
+      "bytes": 3552,
+      "obsKey": null,
+      "status": "local-only",
+      "error": "obs upload 404 (proto=root-ping): {\"detail\":\"Not Found\"}"
+    },
+    {
+      "at": "2026-08-05T10:00:47.890Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785924047227.pdf",
+      "bytes": 3338,
+      "obsKey": null,
+      "status": "local-only",
+      "error": "obs upload 404 (proto=root-ping): {\"detail\":\"Not Found\"}"
+    },
+    {
+      "at": "2026-08-05T09:57:31.093Z",
+      "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785923823427.pdf",
+      "bytes": 3146,
+      "obsKey": null,
+      "status": "local-only",
+      "error": "obs unreachable: RequestInit: duplex option is required when sending a body."
+    },
     {
       "at": "2026-08-05T09:39:11.250Z",
       "localPath": "/home/agent/.claude/workspace/project/18089-everydayVideo/studio-assets/storyboard/exports/storyboard-1785922751246.pdf",
@@ -13,5 +67,5 @@
       "error": "obsEndpoint not configured"
     }
   ],
-  "updatedAt": "2026-08-05T09:39:11.250Z"
+  "updatedAt": "2026-08-05T09:56:56.844Z"
 }

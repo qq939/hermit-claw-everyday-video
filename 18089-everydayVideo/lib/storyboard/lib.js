@@ -24,7 +24,11 @@ const PROJECT_DIR = path.resolve(__dirname, '..', '..');
 const CONFIG_DIR = path.join(PROJECT_DIR, 'config');
 const ASSETS_DIR = path.join(PROJECT_DIR, 'studio-assets', 'storyboard');
 const UPLOAD_DIR = path.join(ASSETS_DIR, 'uploads');
-const EXPORT_DIR = path.join(ASSETS_DIR, 'exports');
+// Single shared scratch file. Overwritten on every export — we never
+// keep a stack of past PDFs on disk, and there is no per-export
+// metadata either. Export = "render the project page now and ship it
+// to OBS", nothing more.
+const TEMP_PDF_PATH = path.join(PROJECT_DIR, 'temp.pdf');
 
 const FILES = {
     cfg: path.join(CONFIG_DIR, 'storyboard.json'),
@@ -37,7 +41,7 @@ const FILES = {
 const KINDS = ['character', 'scene', 'prop'];
 
 function _ensureDirs() {
-    [CONFIG_DIR, ASSETS_DIR, UPLOAD_DIR, EXPORT_DIR].forEach((d) => fs.mkdirSync(d, { recursive: true }));
+    [CONFIG_DIR, ASSETS_DIR, UPLOAD_DIR].forEach((d) => fs.mkdirSync(d, { recursive: true }));
 }
 
 function readJSON(file, fallback) {
@@ -401,7 +405,6 @@ function getConfig() {
         obsBucket: 'hermit-claw',
         obsApiKey: '',
         pdfFooter: 'Hermit-Claw · storyboard',
-        exports: [],
         updatedAt: nowIso(),
     });
 }
@@ -413,23 +416,14 @@ function setConfig(patch) {
     return next;
 }
 
-function recordExport(entry) {
-    const cur = getConfig();
-    const list = Array.isArray(cur.exports) ? cur.exports : [];
-    list.unshift(entry);
-    cur.exports = list.slice(0, 50);
-    writeJSON(FILES.cfg, cur);
-    return cur;
-}
-
 module.exports = {
-    FILES, ASSETS_DIR, UPLOAD_DIR, EXPORT_DIR, KINDS,
+    FILES, ASSETS_DIR, UPLOAD_DIR, TEMP_PDF_PATH, KINDS,
     listProjects, getProject, getDefaultProjectId, ensureDefaultProject,
     createProject, updateProject, deleteProject,
     listItems, listItemsRaw, getItem, createItem, updateItem, deleteItem,
     listVersions, listVersionsRaw, getVersion, versionsOf, createVersion, setCurrentVersion,
     listShots, listShotsRaw, getShot, createShot, updateShot, deleteShot, reorderShots,
     addVersionToShot, removeVersionFromShot,
-    getConfig, setConfig, recordExport,
+    getConfig, setConfig,
     nowIso,
 };

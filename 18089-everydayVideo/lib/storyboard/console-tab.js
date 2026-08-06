@@ -72,7 +72,7 @@
               box-shadow: 0 4px 14px rgba(0,0,0,0.5); }
     #sb-fab .sb-btn { font-size: 12px; padding: 4px 10px; }
     #sb-fab .status { font-size: 11px; color: #9aa3b2; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #sb-fab .last { font-size: 10px; color: #6b7280; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #sb-fab .last { display: none; }  /* removed — no more export history */
     .sb-btn { background: #161b22; color: #e6edf3; border: 1px solid #2a2f3a; border-radius: 6px; padding: 5px 10px; cursor: pointer; font-size: 12px; }
     .sb-btn:hover { border-color: #58a6ff; }
     .sb-btn.primary { background: #58a6ff; color: #0b0e14; border-color: #58a6ff; font-weight: 600; }
@@ -160,7 +160,6 @@
     <div id="sb-fab">
       <button class="sb-btn primary" id="sb-export-btn" title="导出当前项目为 PDF 并上传到 OBS">⬇ PDF</button>
       <span class="status" id="sb-export-status"></span>
-      <span class="last" id="sb-last-export"></span>
       <button class="sb-btn" id="sb-cfg-btn" title="OBS 设置">⚙</button>
     </div>
 
@@ -262,7 +261,7 @@
       this.state.config = s.config || {};
       this.state.projects = s.projects || [];
       this.state.currentProjectId = s.currentProjectId || (this.state.projects[0] && this.state.projects[0].id) || null;
-      this.renderProjects(); this.renderTabs(); this.renderStrip(); this.renderShots(); this.renderExports();
+      this.renderProjects(); this.renderTabs(); this.renderStrip(); this.renderShots();
     },
 
     renderProjects() {
@@ -409,18 +408,6 @@
       const r = await this.api('PATCH', `/api/storyboard/shots/${encodeURIComponent(id)}`, patch);
       const i = this.state.shots.findIndex((x) => x.id === r.shot.id);
       if (i >= 0) this.state.shots[i] = r.shot;
-    },
-
-    renderExports() {
-      const last = document.getElementById('sb-last-export');
-      if (!last) return;
-      const exps = (this.state.config && this.state.config.exports) || [];
-      if (!exps.length) { last.textContent = '尚未导出'; return; }
-      const e = exps[0];
-      const when = (e.at || '').slice(0, 19).replace('T', ' ');
-      const fname = (e.localPath || '').split('/').pop();
-      const dl = fname ? `<a href="/api/storyboard/exports/${encodeURIComponent(fname)}" target="_blank" style="color:#58a6ff;">${this.esc(fname.slice(-22))}</a>` : '';
-      last.innerHTML = `${this.esc(when)} · ${this.esc(e.status)} · ${dl}${e.obsKey ? ' · ' + this.esc(e.obsKey) : ''}`;
     },
 
     openCreateItem(kind) {
@@ -580,11 +567,9 @@
       const r = await SB.api('POST', '/api/storyboard/export-pdf', {
         projectId: SB.state.currentProjectId,
       });
-      const tag = r.file.projectSlug ? `· ${r.file.projectSlug}` : '';
-      status.textContent = r.file.status + ' ' + tag;
-      SB.state.config.exports = [r.file, ...(SB.state.config.exports || [])].slice(0, 50);
-      SB.renderExports();
-      SB.toast(r.file.status === 'uploaded' ? `已上传 OBS · ${r.file.obsKey}` : '本地已保存（OBS 不可达）');
+      const tag = r.obsKey ? `OBS: ${r.obsKey}` : 'OBS 未配置';
+      status.textContent = `${r.status === 'uploaded' ? '上传' : '本地'} · ${tag} · ${(r.bytes / 1024).toFixed(0)} KB`;
+      SB.toast(r.status === 'uploaded' ? `已上传 OBS · ${r.obsKey}` : `本地 temp.pdf（OBS 未配置）`);
     } catch (e) { status.textContent = ''; SB.toast('导出失败：' + e.message, true); }
   };
 

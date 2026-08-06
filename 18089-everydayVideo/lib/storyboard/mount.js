@@ -27,9 +27,8 @@
 //   POST   /api/storyboard/shots/:id/remove         -> remove version from shot
 //   GET    /api/storyboard/config                   -> get storyboard.json
 //   POST   /api/storyboard/config                   -> update storyboard.json
-//   POST   /api/storyboard/export-html              -> render printable HTML (canonical)
-//   POST   /api/storyboard/export-pdf               -> render PDF + upload to OBS
-//   GET    /api/storyboard/exports/:key             -> download a past export
+//   POST   /api/storyboard/export-html              -> render the project page to <root>/temp.html
+//   POST   /api/storyboard/export-pdf               -> render HTML -> PDF (temp.pdf) -> upload to OBS as <projectSlug>.pdf
 
 const fs = require('fs');
 const path = require('path');
@@ -185,25 +184,23 @@ async function obsList(prefix) {
     };
 }
 
-async function obsUpload(localPath, obsKey, projectSlug) {
+// Upload a local file to OBS using the caller-supplied final name.
+// Callers choose whatever naming scheme makes sense — for storyboard
+// exports we use "<projectSlug>.pdf" so each project's PDF lives at
+// a stable URL and re-exports replace cleanly. The dimond OBS server
+// stores the file at /<filename> with no further path structure.
+async function obsUpload(localPath, flatName) {
     const cfg = lib.getConfig();
     if (!cfg.obsEndpoint) return { ok: false, error: 'obsEndpoint not configured', obsKey: null };
     const base = _obsBase();
-    const bucket = cfg.obsBucket || 'hermit-claw';
     let buf;
     try { buf = fs.readFileSync(localPath); }
-    catch (e) { return { ok: false, error: `local read failed: ${e.message}`, obsKey }; }
-    // The dimond OBS server reads the filename from the multipart form
-    // and stores it at /{filename}. Its root namespace is flat, so we
-    // encode "<bucket>/<projectSlug>/<key>" as
-    // "<bucket>_<projectSlug>_<...with / replaced by _>" so multiple
-    // buckets / projects / sub-keys don't collide on the same root.
-    const segments = [bucket, projectSlug || 'unscoped', obsKey].map((s) => String(s).replace(/[\/\\:?*"<>|]/g, '_').replace(/\s+/g, '_'));
-    const flatName = segments.join('_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+    catch (e) { return { ok: false, error: `local read failed: ${e.message}`, obsKey: flatName }; }
+    const safeName = String(flatName).replace(/[\/\\:?*"<>|]/g, '_').replace(/\s+/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
     const boundary = '----sb' + Math.random().toString(16).slice(2);
     const head = Buffer.from(
         `--${boundary}\r\n` +
-        `Content-Disposition: form-data; name="file"; filename="${flatName}"\r\n` +
+        `Content-Disposition: form-data; name="file"; filename="${safeName}"\r\n` +
         `Content-Type: application/octet-stream\r\n\r\n`
     );
     const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
@@ -220,12 +217,12 @@ async function obsUpload(localPath, obsKey, projectSlug) {
             signal: AbortSignal.timeout(30000),
         });
         if (!r.ok) {
-            return { ok: false, error: `obs upload ${r.status}: ${await r.text().catch(() => '')}`, obsKey };
+            return { ok: false, error: `obs upload ${r.status}: ${await r.text().catch(() => '')}`, obsKey: safeName };
         }
-        const url = `${base}/${flatName}`;
-        return { ok: true, obsKey, bytes: buf.length, url, fullName: flatName };
+        const url = `${base}/${safeName}`;
+        return { ok: true, obsKey: safeName, bytes: buf.length, url, fullName: safeName };
     } catch (e) {
-        return { ok: false, error: `obs unreachable: ${e.message}`, obsKey };
+        return { ok: false, error: `obs unreachable: ${e.message}`, obsKey: safeName };
     }
 }
 
@@ -614,15 +611,22 @@ async function handle(req, res, url) {
         return true;
     }
 
-    // ---- export html (canonical printable output) ----
+    // ---- export html (write the project page to a scratch file) ----
+    // The HTML is the canonical "script". For the PDF flow we also
+    // build it internally as the source of truth — the PDF is just
+    // a print form generated from the same data. We keep ONE scratch
+    // copy in <projectRoot>/temp.html (overwrite every time) so the
+    // user can preview/share if needed, but never keep history.
     if (req.method === 'POST' && url.pathname === '/api/storyboard/export-html') {
         parseJSONBody(req, async (body) => {
             try {
                 const data = _buildStoryboardData(body);
-                const out = writeStoryboardHtml(data, lib.EXPORT_DIR);
+                const html = renderStoryboardHtml(data);
+                fs.writeFileSync(path.join(lib.PROJECT_DIR || path.dirname(lib.TEMP_PDF_PATH), 'temp.html'), html, 'utf8');
                 respondJSON(res, 200, {
                     ok: true,
-                    html: { path: out.path, filename: out.filename, bytes: Buffer.byteLength(out.html, 'utf8') },
+                    bytes: Buffer.byteLength(html, 'utf8'),
+                    path: 'temp.html',
                 });
             } catch (e) {
                 respondJSON(res, 500, { error: e.message });
@@ -632,10 +636,19 @@ async function handle(req, res, url) {
     }
 
     // ---- export pdf ----
+    // 1. Render the project page HTML (canonical script).
+    // 2. Render the PDF from the same data.
+    // 3. Overwrite <projectRoot>/temp.pdf (single scratch file).
+    // 4. Upload to OBS as <projectSlug>.pdf — re-exporting the same
+    //    project just replaces the existing PDF on the bucket.
     if (req.method === 'POST' && url.pathname === '/api/storyboard/export-pdf') {
         parseJSONBody(req, async (body) => {
             try {
                 const data = _buildStoryboardData(body);
+                // 1. canonical HTML scratch file
+                const html = renderStoryboardHtml(data);
+                fs.writeFileSync(path.join(path.dirname(lib.TEMP_PDF_PATH), 'temp.html'), html, 'utf8');
+                // 2. render the PDF
                 const versionsById = {};
                 for (const v of data.versions) versionsById[v.id] = { ...v, item: data.items.find((x) => x.id === v.itemId) };
                 const buf = renderStoryboardPdf({
@@ -647,57 +660,33 @@ async function handle(req, res, url) {
                     versionsByCharacter: versionsById,
                     generatedAt: data.generatedAt,
                 });
-                const fname = `storyboard-${Date.now()}.pdf`;
-                const localPath = path.join(lib.EXPORT_DIR, fname);
-                fs.writeFileSync(localPath, buf);
-                // Also write the HTML version alongside it. The HTML is
-                // the canonical "script" — the PDF is just a print
-                // form. The two share the same slug so it's obvious
-                // they came from the same export.
-                const htmlOut = writeStoryboardHtml(data, lib.EXPORT_DIR);
-                // Upload to OBS if configured, else mark pending.
-                const obsKey = `exports/${fname}`;
-                const projectSlug = data.projectSlug || 'unscoped';
+                // 3. overwrite the single scratch PDF
+                fs.writeFileSync(lib.TEMP_PDF_PATH, buf);
+                // 4. upload to OBS — key is just <projectSlug>.pdf so
+                //    each project has its own slot and re-exports
+                //    replace cleanly.
                 const cfg = lib.getConfig();
+                const projectSlug = data.projectSlug || 'unscoped';
+                const obsKey = `${projectSlug}.pdf`;
                 let up;
                 if (cfg.obsEndpoint) {
-                    up = await obsUpload(localPath, obsKey, projectSlug);
+                    up = await obsUpload(lib.TEMP_PDF_PATH, obsKey);
                 } else {
                     up = { ok: false, error: 'obsEndpoint not configured', obsKey: null };
                 }
-                const entry = {
-                    at: lib.nowIso(),
-                    localPath,
-                    htmlPath: htmlOut.path,
+                respondJSON(res, 200, {
+                    ok: true,
                     bytes: buf.length,
+                    tempPath: lib.TEMP_PDF_PATH,
                     obsKey: up && up.ok ? obsKey : null,
                     obsFullName: up && up.ok ? up.fullName : null,
-                    projectId: data.projectId,
-                    projectSlug: data.projectSlug,
                     status: up && up.ok ? 'uploaded' : 'local-only',
                     error: up && up.ok ? null : (up && up.error),
-                };
-                lib.recordExport(entry);
-                respondJSON(res, 200, { ok: true, file: entry, html: { path: htmlOut.path, filename: htmlOut.filename } });
+                });
             } catch (e) {
                 respondJSON(res, 500, { error: e.message });
             }
         });
-        return true;
-    }
-
-    // ---- download past export ----
-    const exportDlMatch = url.pathname.match(/^\/api\/storyboard\/exports\/(.+)$/);
-    if (exportDlMatch && req.method === 'GET') {
-        const fname = decodeURIComponent(exportDlMatch[1]);
-        if (fname.includes('/') || fname.includes('..')) {
-            res.writeHead(400); res.end('bad name'); return true;
-        }
-        const fp = path.join(lib.EXPORT_DIR, fname);
-        if (!fs.existsSync(fp)) { res.writeHead(404); res.end('not found'); return true; }
-        const st = fs.statSync(fp);
-        res.writeHead(200, { 'Content-Type': 'application/pdf', 'Content-Length': st.size, 'Content-Disposition': `attachment; filename="${fname}"` });
-        fs.createReadStream(fp).pipe(res);
         return true;
     }
 

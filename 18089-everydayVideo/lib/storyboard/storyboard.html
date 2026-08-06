@@ -121,18 +121,6 @@
   }
   .export-bar button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
   .export-bar .status { color: var(--fg-3); font-size: 12px; }
-  .export-list {
-    background: var(--bg-2); border: 1px solid var(--line); border-radius: var(--r);
-    max-height: 200px; overflow-y: auto; padding: 6px;
-  }
-  .export-list .row { padding: 6px 10px; display: flex; gap: 10px; align-items: center; font-size: 12px; border-bottom: 1px solid var(--line); }
-  .export-list .row:last-child { border-bottom: none; }
-  .export-list .row .meta { color: var(--fg-3); }
-  .export-list .row .ok { color: var(--accent-2); }
-  .export-list .row .warn { color: var(--warn); }
-  .export-list .row .err { color: var(--err); }
-  .export-list a { color: var(--accent); text-decoration: none; }
-  .export-list a:hover { text-decoration: underline; }
 
   /* ===== Modal: 3-view editor ===== */
   .modal-bg {
@@ -282,7 +270,9 @@
     <button class="primary" id="exportPdf" onclick="exportPdf()">导出 PDF 并上传 OBS</button>
     <span class="status" id="exportStatus"></span>
   </div>
-  <div class="export-list" id="exportList"><div class="meta" style="padding:10px;">尚无导出记录</div></div>
+  <div class="export-hint" style="color:var(--fg-3);font-size:11px;padding:8px 0 0 0;">
+    PDF 直接落到项目根目录的 <code style="background:var(--bg-3);padding:1px 5px;border-radius:3px;">temp.pdf</code>，并以 <code style="background:var(--bg-3);padding:1px 5px;border-radius:3px;">&lt;项目名&gt;.pdf</code> 上传 OBS（同名会覆盖）。不保留历史记录。
+  </div>
 </section>
 
 <!-- ===== Modal: editor (3 views) ===== -->
@@ -427,7 +417,6 @@ async function reloadState() {
 function renderAll() {
   renderLibStrip();
   renderShots();
-  renderExports();
 }
 
 function renderLibStrip() {
@@ -845,9 +834,9 @@ async function exportHtml() {
   try {
     const title = document.getElementById('exportTitle').value.trim();
     const j = await api('POST', '/api/storyboard/export-html', { title });
-    if (j.ok && j.html) {
+    if (j.ok) {
       document.getElementById('exportStatus').textContent =
-        `HTML 已保存：${j.html.path}（${(j.html.bytes / 1024).toFixed(1)} KB）`;
+        `HTML 已写入 ${j.path}（${(j.bytes / 1024).toFixed(1)} KB）`;
       toast('HTML 已生成', 'ok');
     } else {
       document.getElementById('exportStatus').textContent = '导出失败';
@@ -866,14 +855,12 @@ async function exportPdf() {
     const title = document.getElementById('exportTitle').value.trim();
     const j = await api('POST', '/api/storyboard/export-pdf', { title });
     if (j.ok) {
-      const f = j.file;
-      const htmlNote = j.html ? ` + HTML（${j.html.filename}）` : '';
+      const tail = j.status === 'uploaded'
+        ? `OBS 已覆盖：${j.obsKey}`
+        : `OBS 未配置 — 仅本地：${j.tempPath}`;
       document.getElementById('exportStatus').textContent =
-        f.status === 'uploaded'
-          ? `已上传 OBS：${f.obsKey}${htmlNote}`
-          : `本地已保存：${f.localPath}${htmlNote}（OBS 未配置）`;
+        `${j.tempPath}（${(j.bytes / 1024).toFixed(1)} KB） · ${tail}`;
       toast('PDF 已生成', 'ok');
-      reloadState();
     } else {
       document.getElementById('exportStatus').textContent = '导出失败';
       toast(j.error || '导出失败', 'err');
@@ -882,30 +869,6 @@ async function exportPdf() {
     btn.disabled = false;
   }
 }
-function renderExports() {
-  const list = document.getElementById('exportList');
-  const exports = (STATE.config && STATE.config.exports) || [];
-  if (!exports.length) {
-    list.innerHTML = '<div class="meta" style="padding:10px;">尚无导出记录</div>';
-    return;
-  }
-  list.innerHTML = '';
-  for (const e of exports) {
-    const fname = e.localPath.split('/').pop();
-    const row = document.createElement('div');
-    row.className = 'row';
-    row.innerHTML = `
-      <span class="${e.status === 'uploaded' ? 'ok' : 'warn'}">●</span>
-      <span>${escapeHtml(fname)}</span>
-      <span class="meta">${escapeHtml(e.at)}</span>
-      <span class="meta">${(e.bytes / 1024).toFixed(1)} KB</span>
-      <span class="meta">${e.status === 'uploaded' ? escapeHtml(e.obsKey) : escapeHtml(e.error || 'local')}</span>
-      <a href="/api/storyboard/exports/${encodeURIComponent(fname)}" download>下载</a>
-    `;
-    list.appendChild(row);
-  }
-}
-
 /* ====== boot ====== */
 reloadState();
 setInterval(reloadState, 30000);

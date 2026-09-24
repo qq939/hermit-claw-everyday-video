@@ -21,6 +21,10 @@ yarn-error.log*
 *.swp
 *.swo
 
+# curl cookies (left over from GitHub tarball downloads)
+/100
+/8
+
 # Local-only state
 .env
 .env.local

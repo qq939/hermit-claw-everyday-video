@@ -12,13 +12,13 @@
     "enabled": true,
     "intervalHours": 1,
     "timeOfDay": null,
-    "lastRun": "2026-09-24T13:26:55.267Z",
-    "nextRun": "2026-09-24T14:26:55.267Z",
+    "lastRun": "2026-09-24T14:28:41.204Z",
+    "nextRun": "2026-09-24T15:28:41.204Z",
     "emailReportHours": 24,
     "lastEmailAt": "2026-09-24T05:20:12.245Z",
     "nextEmailAt": "2026-09-25T05:20:12.245Z"
   },
   "workInstructions": "",
   "createdAt": "2026-08-04T04:20:25.987Z",
-  "updatedAt": "2026-09-24T13:26:55.267Z"
+  "updatedAt": "2026-09-24T14:28:41.204Z"
 }

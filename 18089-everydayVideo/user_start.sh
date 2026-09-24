@@ -4,7 +4,7 @@
 
 set -u
 
-cd /home/agent/.claude/workspace/project
+cd /home/agent/.claude/workspace/project/18089-everydayVideo
 
 mkdir -p logs
 

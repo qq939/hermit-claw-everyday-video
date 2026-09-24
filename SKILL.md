@@ -17,7 +17,12 @@
 | `./18089-everydayVideo/lib/skill-ui.html` | 交互式技能配置页面 |
 | `./18089-everydayVideo/lib/comm-manager.js` | 通信管理核心模块 |
 | `./18089-everydayVideo/lib/console.html` | Agent 控制台（对外交流页面） |
-| `./18089-everydayVideo/lib/storyboard/` | 分镜本子系统（lib.js / mount.js / pdf.js / font-loader.js / storyboard.html / console-tab.js） |
+| `./18089-everydayVideo/lib/storyboard/` | 分镜本子系统（lib.js / mount.js / pdf.js / font-loader.js / storyboard.html / console-tab.js / pdf-template.js） |
+| `./18089-everydayVideo/lib/h3/client.js` | H3 视频生成客户端（MiniMax Open Platform） |
+| `./18089-everydayVideo/MiniMax-H3/` | 上游 H3 仓库（164MB，9 个 style skill） |
+| `./18089-everydayVideo/skills/h3-prompt-writing/` | H3 prompt 写作 skill（容器版） |
+| `./18089-everydayVideo/skills/minimax-h3/SKILL.md` | 本地 H3 调用入口 |
+| `./18089-everydayVideo/scripts/test-h3-client.js` | H3 客户端单测（6 个） |
 | `./18089-everydayVideo/lib/studio/` | Studio 子系统（fal.ai 角色 + 本地海报/GIF/长文） |
 | `./18089-everydayVideo/config/skills.json` | 技能配置存储文件 |
 | `./18089-everydayVideo/config/comm.json` | 通信配置（邮件/调度/Master 邮箱） |
@@ -64,6 +69,17 @@ curl http://localhost:8082/skill/api/clawra                    # Clawra 专用�
 curl -X POST http://localhost:8082/skill/api/configure \       # 保存技能配置
   -H "Content-Type: application/json" \
   -d '{"name":"clawra-selfie","config":{"FAL_KEY":"xxx"}}'
+
+# H3 视频生成（MiniMax Open Platform）
+curl http://localhost:8082/h3/health                           # H3 客户端状态
+curl -X POST http://localhost:8082/h3/videos \                  # 创建视频任务
+  -H "Content-Type: application/json" \
+  -d '{"task":"t2va","prompt":"a capybara in cotton-candy sky","duration_seconds":6,"aspect_ratio":"16:9"}'
+curl http://localhost:8082/h3/videos/<task_id>                 # 查任务状态
+curl -o out.mp4 http://localhost:8082/h3/videos/<task_id>/download   # 下载 MP4
+
+# H3 客户端单测
+node 18089-everydayVideo/scripts/test-h3-client.js
 
 # 控制台与消息板
 curl http://localhost:8082/                                    # 主控制台（页面）
@@ -137,6 +153,16 @@ curl http://localhost:8082/api/storyboard/exports/<key>          # 下载历史�
 | 导出 PDF 上传 401/403 | `curl /api/storyboard/config` 看 `obsEndpoint` | OBS token 过期；endpoint 配错（默认应是 `http://obs.dimond.top`） |
 | 镜头表 chip 删除不掉 | 检查 `storyboard.html` 中 `.chip-remove` 绑定 | 第 12 轮后应绑 `castVersionIds` / `sceneVersionIds` / `propVersionIds`（不是 `characterVersionIds`） |
 | drop-after-promote 没生效 | `cat config/storyboard-library-versions.json \| jq` | 双击「设为当前」走的是 `mount.js` 的 `set-current` 路由，确认入参带 `versionId` |
+| H3 路由 404 | `curl -sS http://localhost:8082/h3/health` | server.js 没引入 `lib/h3/client.js`（旧版本） |
+| `H3` 报 `apiKeySet:false` | `curl /skill/api/status \| jq .skills.minimax-h3` | `H3_API_KEY` 未注入；从 `https://api.minimaxi.com` 控制台拿 key |
+| `POST /h3/videos` 回 `1004 login fail` | 正常 — 协议栈通，但 API key 缺失或失效 | 检查 `H3_API_KEY` 是否过期 |
+| H3 报 `Invalid task` | `curl ... -d '{"task":"xxx"}'` | task 必须 ∈ `t2va/i2va/fl2va/l2va/ref2va` |
+| H3 报 `duration out of range` | — | duration 必须在 4-15 秒 |
+| H3 报 `short_edge out of range` | — | target.short_edge 必须在 256-2048 |
+| H3 MP4 下载失败 | `curl -v /h3/videos/<id>/download` | 任务未成功（先 `/h3/videos/<id>` 看 status） |
+| H3 skill 没注入 IDENTITY | `cat 18089-everydayVideo/IDENTITY.md \| grep minimax-h3` | Skill Manager 没启动；重启 `user_start.sh` |
+| GitHub clone 失败 | `curl -I https://ghfast.top/` | 主站 HTTP/2 stream reset → 换镜像 `https://ghfast.top/` |
+| 容器无 GPU | `nvidia-smi 2>&1` | H3 必须走 API，不能本地推理（33B 权重） |
 
 ## 四、修改代码的注意点
 
@@ -181,6 +207,10 @@ curl http://localhost:8082/api/storyboard/exports/<key>          # 下载历史�
 31. **多项目隔离**：分镜本的 item / version / shot 全部带 `projectId`。`/api/storyboard/state?projectId=` 必须按项目过滤返回。新建素材 / 镜头 / 导出 PDF 时也要传 `projectId`，否则落到默认项目；`mount.js` 的 `POST /items` 早期漏透传 `projectId` 是已知 bug，已修。
 32. **OBS 平面命名**：上传 key 必须是 `<bucket>_<projectSlug>_`，`/` 与危险字符全部转 `_`。默认 endpoint 是 `http://obs.dimond.top`（容器外域名），容器内直连走 `http://host.docker.internal:18000`。
 33. **FAB 取代 inline 按钮**：导出区一开始用 bottom bar（输入框 + 长排按钮 + 列表），挤掉镜头表。改成右下角浮动按钮后，layout 用 `auto 1fr`，镜头表能占满剩余空间；FAB 用 `position:absolute; right:18; bottom:18`，锚到 `#page-storyboard` 上。
+34. **H3 客户端校验顺序**：`createVideo()` 必须先校验 `task ∈ {t2va,i2va,fl2va,l2va,ref2va}` → 再校验 `prompt` 非空 → 再校验 `duration_seconds` 4-15 → 再校验 `target.short_edge` 256-2048。顺序错了会让错误信息混在网络异常里。
+35. **H3 路由挂载点**：4 个 `/h3/*` 路由必须挂在 `app.use` 之前，且 `if (req.method === 'POST' && url.pathname === '/h3/videos')` 用 `===` 不要 `startsWith`，否则会被 `/h3/videos/:id` 抢路径。
+36. **H3 API key 注入**：优先 `process.env.H3_API_KEY` → 其次 `skill-manager` 注入到 `config/skills.json` 的 `H3_API_KEY` → `.env` 仅作占位。`/h3/health` 暴露 `apiKeySet` 字段（不暴露 key 本身）。
+37. **MiniMax-H3 不是本地模型**：仓库里只有 `model_index.json` + tokenizer，33B 权重不在。任何"用 H3 在容器内推理"的请求都应拒绝并改走 `/h3/videos`。
 
 ## 五、启动脚本契约
 
@@ -221,6 +251,7 @@ __MACOSX/
 - Node.js v20+：项目 `server.js` 使用 `http`、`net`、`child_process`、`fs`、`crypto`、`path` 等内置模块。
 - `ANTHROPIC_DISABLE_PREFLIGHT=1`：在 `server.js` 与 `run_claude.js` 中都设置了。
 - Supabase（可选）：详见 systemreadme.md §十三，需要时按文档安装 `@supabase/supabase-js @supabase/ssr`。
+- MiniMax H3 Open Platform（视频生成）：`https://api.minimaxi.com`，token 通过 `H3_API_KEY` 环境变量或 `config/skills.json` 注入。5 类任务（`t2va/i2va/fl2va/l2va/ref2va`），4-15 秒，768p/2K。
 
 ## 九、会话变更记录
 
@@ -385,3 +416,23 @@ __MACOSX/
   - `_hex4` 之前把十进制当十六进制 → 改成 `n.toString(16)`
 - ✅ 验证：15.7MB PDF（包含完整 CFF 18MB），pypdf 提取中文正常（`噜噜的天空` / `棉花糖天空` / `水豚噜噜`）
 - ✅ `commit b6916ab`
+
+### 2026-08-06（第 16-19 轮）
+- ✅ 模板化 PDF（封面/库/分镜/导出 四类页）+ 零依赖 `_cidHex` 走 `codeToCid` + ToUnicode CMap 钳 16-bit → pypdf 0 warning（第 16-17 轮）
+- ✅ 砍掉 exports 页（admin 历史记录不属于脚本）+ 改 HTML-first 路线（`pdf-template.js` + `/api/storyboard/export-html` + 浏览器 Cmd+P 也能用）（第 18 轮）
+- ✅ 砍 `cfg.exports` / `EXPORT_DIR` / `recordExport()` / downloads 路由 → 导出单文件 `temp.html` + `temp.pdf`（每次覆盖）→ OBS 上传 key = `<projectSlug>.pdf`（第 19 轮）
+
+### 2026-09-15/16/17（第 21 轮）— MiniMax-H3 部署
+- ✅ 容器**无 GPU**：`nvidia-smi` / `/dev/nvidia*` 均无；33B 模型权重不在仓库
+- ✅ GitHub 主站不稳定 → 镜像 `https://ghfast.top/` 下载（100MB / 55s / 1.7MB/s）
+- ✅ `18089-everydayVideo/MiniMax-H3/`（164MB，282 文件）
+- ✅ `lib/h3/client.js`（原生 `https`）：`createVideo` / `getVideo` / `downloadVideo`，校验 task/duration/target
+- ✅ 6/6 单测通过（`scripts/test-h3-client.js`）
+- ✅ 4 个 H3 路由：`GET /h3/health`、`POST /h3/videos`、`GET /h3/videos/:id`、`GET /h3/videos/:id/download`
+- ✅ 9 个 H3 风格 skill 落 `skills/`（3d-animation / brand-promo / co-op-game / handdrawn-live / minimalist-product / music-video-subtitle / paper-collage / papercraft-stop-motion）
+- ✅ `config/skills.json` 注册 `minimax-h3`（含 `H3_API_KEY` / `H3_API_BASE` schema）
+- ✅ `skills/minimax-h3/SKILL.md` + `.env`（API key 占位）
+- ✅ `IDENTITY.md` 自动注入 `minimax-h3` skill
+- ✅ 端到端验证：`/h3/videos/test-curl-123` → `1004 login fail`（协议栈通，仅缺 key）
+- ✅ `user_start.sh` cwd 已修：`cd /home/agent/.claude/workspace/project/18089-everydayVideo`
+- ✅ 当前 server.js pid 399（`logs/server.pid`），`/health` 与 `/h3/health` 双绿

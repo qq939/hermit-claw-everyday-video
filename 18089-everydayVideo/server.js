@@ -11,6 +11,7 @@ const skillManager = require('./lib/skill-manager');
 const commManager = require('./lib/comm-manager');
 const studioMount = require('./lib/studio/mount');
 const storyboardMount = require('./lib/storyboard/mount');
+const h3Client = require('./lib/h3/client');
 
 const PORT = 8082;
 const PROJECT_DIR = __dirname;
@@ -559,6 +560,62 @@ const server = http.createServer((req, res) => {
                     res.end('storyboard error');
                 }
             });
+        return;
+    }
+
+    // ---- H3 video generation routes ----
+    // GET  /h3/health              — local H3 client status
+    // POST /h3/videos              — create a t2va/i2va/fl2va/l2va/ref2va job
+    // GET  /h3/videos/:id          — poll status
+    // GET  /h3/videos/:id/download — download MP4
+    if (req.method === 'GET' && url.pathname === '/h3/health') {
+        respondJSON(res, 200, {
+            ok: true,
+            apiBase: h3Client.DEFAULT_BASE,
+            apiKeySet: Boolean(process.env.H3_API_KEY),
+            tasks: ['t2va', 'i2va', 'fl2va', 'l2va', 'ref2va'],
+        });
+        return;
+    }
+    if (req.method === 'POST' && url.pathname === '/h3/videos') {
+        parseJSONBody(req, async (body) => {
+            if (!body) {
+                respondJSON(res, 400, { error: 'JSON body required' });
+                return;
+            }
+            try {
+                const result = await h3Client.createVideo(body, process.env.H3_API_KEY);
+                respondJSON(res, 200, result);
+            } catch (e) {
+                respondJSON(res, 500, { error: e.message });
+            }
+        });
+        return;
+    }
+    if (req.method === 'GET' && url.pathname.startsWith('/h3/videos/')) {
+        const rest = url.pathname.slice('/h3/videos/'.length);
+        const m = rest.match(/^([^/]+)(\/download)?$/);
+        if (!m) {
+            respondJSON(res, 400, { error: 'Invalid path' });
+            return;
+        }
+        const id = decodeURIComponent(m[1]);
+        const wantsDownload = Boolean(m[2]);
+        (async () => {
+            try {
+                if (wantsDownload) {
+                    const out = path.join(PROJECT_DIR, 'outputs', `${id}.mp4`);
+                    await h3Client.downloadVideo(id, out, process.env.H3_API_KEY);
+                    res.writeHead(200, { 'Content-Type': 'video/mp4' });
+                    fs.createReadStream(out).pipe(res);
+                } else {
+                    const status = await h3Client.getVideo(id, process.env.H3_API_KEY);
+                    respondJSON(res, 200, status);
+                }
+            } catch (e) {
+                respondJSON(res, 500, { error: e.message });
+            }
+        })();
         return;
     }
 

@@ -26,6 +26,8 @@ yarn-error.log*
 .env.local
 config/*.json
 !config/.gitkeep
+18089-everydayVideo/config/*.json
+!18089-everydayVideo/config/.gitkeep
 sessions/
 
 # Studio assets (regeneratable)

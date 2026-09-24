@@ -440,3 +440,60 @@ echo "$(git rev-parse --short HEAD) <变更描述>" >> logs/commit.txt
 - ✅ 分镜本加 projects 隔离 + OBS 平面命名 `bucket_project_filename`（第 13 轮）
 - ✅ 修 PDF 空白（Pages dict 自覆盖 / 字体引用 / chips 数据模型）+ 导出改右下角 FAB（第 14 轮）
 - ✅ PDF 支持 CJK：Identity-H + CIDFontType0 + CFF + ToUnicode CMap；pypdf 可正常提取中文（第 15 轮）
+- ✅ PDF 美化（封面/库/分镜/导出 四类页）+ 砍 exports 页（第 17-18 轮）
+- ✅ 导出改 HTML→temp.pdf→OBS，砍掉本地 export 元数据（第 19 轮）
+- ✅ MiniMax-H3 子项目部署：`18089-everydayVideo/MiniMax-H3/`（164MB，282 文件，第 21 轮）
+- ✅ H3 客户端 `lib/h3/client.js` + 6/6 单测 + 4 个 `/h3/*` 路由（第 21 轮）
+- ✅ 9 个 H3 风格 skill 落地 + `minimax-h3` skill 注册 + IDENTITY 注入（第 21 轮）
+
+## H3 视频生成子系统（第 21 轮）
+
+`MiniMax-H3` 是多模态生成系统（文/图/视频/音频 → 2K 视频 + 立体声），由 H3-Context-IR + H3-Base（33B Transformer）+ H3-Regenerate-2K 组成。本容器**无 GPU**，所有 H3 生成通过 `https://api.minimaxi.com` 完成。
+
+### 部署件
+
+| 路径 | 说明 |
+| --- | --- |
+| `18089-everydayVideo/MiniMax-H3/` | 上游仓库（README + 8 个模型目录 + 9 个 style skill + 脚本） |
+| `18089-everydayVideo/lib/h3/client.js` | 原生 https 客户端（`createVideo` / `getVideo` / `downloadVideo`） |
+| `18089-everydayVideo/scripts/test-h3-client.js` | 6 个单测全过 |
+| `18089-everydayVideo/scripts/register-h3-tool.js` | 向 18081 Tools Hub 注册 |
+| `18089-everydayVideo/skills/h3-prompt-writing/` | Prompt 写作 skill（含 `H3-SKILL-INDEX.md` 容器版） |
+| `18089-everydayVideo/skills/minimax-h3/SKILL.md` + `.env` | 调用入口 + API key 占位 |
+| `18089-everydayVideo/config/skills.json` | 注册 `minimax-h3`（含 `H3_API_KEY` / `H3_API_BASE` schema） |
+
+### 路由（挂在 `:8082`）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/h3/health` | 本地 H3 客户端状态（apiBase / apiKeySet / 支持的 task） |
+| POST | `/h3/videos` | 创建 t2va/i2va/fl2va/l2va/ref2va 任务 |
+| GET | `/h3/videos/:id` | 轮询任务状态 |
+| GET | `/h3/videos/:id/download` | 下载 MP4 |
+
+### 支持的 Task
+
+`t2va`（文→视频音频）、`i2va`（图→视频音频）、`fl2va`（首末帧→视频音频）、`l2va`（长视频扩展）、`ref2va`（参考主体→视频音频）。时长 4-15 秒，分辨率 768p / 2K，比例可自定义。
+
+### 工作流（提示词自递归优化）
+
+1. 收任务 → 用 `skills/h3-prompt-writing` 自我递归优化提示词与分镜
+2. **先生图定妆定场景定道具** → 通过 `t2i` / `i2i` 接口产 `cfg/storyboard-library.json`
+3. **再生成 H3 视频** → 调 `POST /h3/videos`（task 由素材决定）
+4. 拉取 MP4 → 写 OBS → 通知主人
+
+### 启用
+
+```bash
+# 1. 填 API key（MiniMax Open Platform）
+export H3_API_KEY=eyJ...
+# 或写到 18089-everydayVideo/skills/minimax-h3/.env
+
+# 2. 验证
+curl -sS http://localhost:8082/h3/health
+# {"ok":true,"apiBase":"https://api.minimaxi.com","apiKeySet":true,...}
+```
+
+### 验证证据
+
+- `curl http://localhost:8082/h3/videos/test` → `1004 login fail`（缺 API key）→ 协议栈通
